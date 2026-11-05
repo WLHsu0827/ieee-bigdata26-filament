@@ -1,0 +1,107 @@
+"""Unit tests on synthetic masks (no competition data needed).
+
+Run with:  python -m pytest -q tests
+"""
+import numpy as np
+import pandas as pd
+import pytest
+
+from filseg import rle
+from filseg.metrics import Crop, evaluate, evaluate_frames, overlap_matrices, pq_from_overlaps
+from filseg.postprocess import PostConfig, grow_labels, instances_from_prob, label_to_crops
+
+H = W = 2048
+
+
+def box(y0, x0, h, w):
+    m = np.zeros((H, W), bool)
+    m[y0:y0 + h, x0:x0 + w] = True
+    return m
+
+
+def test_rle_roundtrip():
+    m = box(10, 20, 30, 40) | box(1000, 1500, 5, 300)
+    counts = rle.encode(m)
+    assert isinstance(counts, str)
+    assert np.array_equal(rle.decode(counts), m)
+    assert rle.area(counts) == m.sum()
+
+
+def test_polygon_rasterisation_matches_area():
+    poly = [100.0, 100.0, 200.0, 100.0, 200.0, 150.0, 100.0, 150.0, 100.0, 100.0]
+    m = rle.polygon_to_mask(poly)
+    assert abs(int(m.sum()) - 100 * 50) <= 2 * (100 + 50)
+
+
+def test_overlap_matrix_iou():
+    a, b = Crop.from_full(box(0, 0, 10, 10)), Crop.from_full(box(0, 5, 10, 10))
+    iou, dice = overlap_matrices([a], [b])
+    assert iou[0, 0] == pytest.approx(50 / 150)
+    assert dice[0, 0] == pytest.approx(100 / 200)
+
+
+def test_pq_perfect_and_empty():
+    gt = {"010101-img": [Crop.from_full(box(0, 0, 20, 20)), Crop.from_full(box(100, 100, 20, 20))]}
+    res, _ = evaluate(gt, {"img": gt["010101-img"]})
+    assert res.pq == pytest.approx(1.0) and res.tp == 2
+    res, _ = evaluate(gt, {})
+    assert res.pq == 0 and res.fn == 2
+
+
+def test_pq_definition_with_fp_fn_and_multiple_annotators():
+    g1 = Crop.from_full(box(0, 0, 10, 10))
+    g2 = Crop.from_full(box(500, 500, 10, 10))
+    p1 = Crop.from_full(box(0, 0, 10, 8))           # IoU 0.8 with g1
+    p2 = Crop.from_full(box(900, 900, 10, 10))      # false positive
+    gt = {"010101-img": [g1, g2], "010102-img": [g1]}
+    res, df = evaluate(gt, {"img": [p1, p2]})
+    # annotator 1: TP(0.8), FN(g2), FP(p2); annotator 2: TP(0.8), FP(p2)
+    assert (res.tp, res.fp, res.fn) == (2, 2, 1)
+    assert res.pq == pytest.approx(1.6 / (2 + 0.5 * 2 + 0.5 * 1))
+    assert len(df) == 2
+
+
+def test_iou_exactly_half_is_not_a_match():
+    g = Crop.from_full(box(0, 0, 10, 10))
+    p = Crop.from_full(box(0, 0, 10, 5))            # IoU = 0.5 -> not a TP (strict >)
+    res = pq_from_overlaps([(overlap_matrices([g], [p])[0], 1, 1)])
+    assert res.tp == 0 and res.fp == 1 and res.fn == 1
+
+
+def test_evaluate_frames_official_format():
+    m = box(10, 10, 30, 30)
+    gt = pd.DataFrame({"filament_id": ["010101-img_1"], "segmentation_rle": [rle.encode(m)]})
+    pred = pd.DataFrame({"filament_id": ["img_1"], "segmentation_rle": [rle.encode(m)]})
+    res, _ = evaluate_frames(gt, pred)
+    assert res.pq == pytest.approx(1.0)
+
+
+def test_postprocess_components_and_filters():
+    prob = np.zeros((H, W), np.float32)
+    prob[100:140, 100:300] = 0.9                    # large confident filament
+    prob[500:504, 500:504] = 0.9                    # tiny blob -> removed by min_area
+    prob[800:840, 800:1000] = 0.55                  # weak component -> removed by min_max_prob
+    lab, stats = instances_from_prob(prob, PostConfig(threshold=0.5, min_area=50, min_max_prob=0.7))
+    assert lab.max() == 1 and len(stats) == 1
+    crops = label_to_crops(lab)
+    assert crops[0].area == 40 * 200
+
+
+def test_fill_holes_and_merge_distance():
+    prob = np.zeros((H, W), np.float32)
+    prob[100:140, 100:200] = 0.9
+    prob[115:125, 140:160] = 0.0                    # hole
+    prob[100:140, 205:300] = 0.9                    # second fragment, gap of 5 px
+    lab, _ = instances_from_prob(prob, PostConfig(threshold=0.5, min_area=10))
+    assert lab.max() == 2 and (lab[120, 150] > 0)
+    lab, _ = instances_from_prob(prob, PostConfig(threshold=0.5, min_area=10, merge_distance=8))
+    assert lab.max() == 1
+
+
+def test_grow_labels_keeps_instances_disjoint():
+    lab = np.zeros((64, 64), np.int32)
+    lab[10:20, 10:20] = 1
+    lab[10:20, 23:33] = 2
+    g = grow_labels(lab, 3)
+    assert set(np.unique(g)) == {0, 1, 2}
+    assert (g == 1).sum() > 100 and (g == 2).sum() > 100
