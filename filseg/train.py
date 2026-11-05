@@ -127,6 +127,7 @@ def main(argv=None) -> None:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--res", type=int, default=512, help="training/inference resolution (full image)")
     ap.add_argument("--crop", type=int, default=0, help="random crop size at --res (0 = full image)")
+    ap.add_argument("--epoch-mult", type=int, default=1, help="samples per image per epoch (useful with --crop)")
     ap.add_argument("--arch", default="Unet")
     ap.add_argument("--encoder", default="resnet34")
     ap.add_argument("--weights", default="imagenet", help="encoder pre-training (\"none\" = random init)")
@@ -187,7 +188,7 @@ def main(argv=None) -> None:
     model = build_model(args.arch, args.encoder, None if args.weights == "none" else args.weights).to(device)
     if device.type == "cuda":
         model = model.to(memory_format=torch.channels_last)
-    ds = TrainSet(imgs[tr_idx], tgts[tr_idx], args.crop or args.res)
+    ds = TrainSet(imgs[tr_idx], tgts[tr_idx], args.crop or args.res, args.epoch_mult)
     dl = DataLoader(ds, batch_size=args.bs, shuffle=True, drop_last=True, num_workers=args.workers,
                     pin_memory=device.type == "cuda", persistent_workers=args.workers > 0)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
