@@ -169,3 +169,12 @@ def test_small_instance_weights():
     assert w[105, 105] == pytest.approx((1200 / rle.polygon_to_mask(small).sum()) ** 0.5, rel=1e-5)
     assert w[105, 98] == w[105, 105]              # margin band
     assert w[550, 550] == 1.0 and w[50, 50] == 1.0
+
+
+def test_tta_inverse_transforms():
+    import torch
+    from filseg.model import predict_batch
+    x = torch.randn(2, 1, 32, 32)
+    for tta in (1, 2, 4, 8):
+        p = predict_batch(torch.nn.Identity(), x, tta=tta)
+        assert torch.allclose(p, torch.sigmoid(x), atol=1e-6)

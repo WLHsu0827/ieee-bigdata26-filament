@@ -31,15 +31,17 @@ def resize_image(img: np.ndarray, res: int) -> np.ndarray:
 
 @torch.no_grad()
 def predict_batch(model: torch.nn.Module, x: torch.Tensor, tta: int = 4) -> torch.Tensor:
-    """Sigmoid probabilities averaged over flip TTA. x: (B, 1, H, W)."""
-    flips = [(), (3,), (2,), (2, 3)][:max(1, tta)]
+    """Sigmoid probabilities averaged over dihedral TTA (1, 2, 4 flips; 8 = flips x rot90). x: (B, 1, H, W)."""
+    ops = [(k, f) for k in (0, 1) for f in [(), (3,), (2,), (2, 3)]][:max(1, tta)]
     acc = None
-    for f in flips:
-        xi = torch.flip(x, f) if f else x
+    for k, f in ops:
+        xi = torch.rot90(x, k, (2, 3)) if k else x
+        xi = torch.flip(xi, f) if f else xi
         p = torch.sigmoid(model(xi).float())
         p = torch.flip(p, f) if f else p
+        p = torch.rot90(p, -k, (2, 3)) if k else p
         acc = p if acc is None else acc + p
-    return acc / len(flips)
+    return acc / len(ops)
 
 
 @torch.no_grad()
