@@ -1,0 +1,72 @@
+"""Segmentation network and tiled / test-time-augmented prediction."""
+from __future__ import annotations
+
+import cv2
+import numpy as np
+import torch
+
+from . import IMAGE_SIZE
+
+MEAN, STD = 0.45, 0.225
+
+
+def build_model(arch: str = "Unet", encoder: str = "resnet34", weights: str | None = "imagenet",
+                classes: int = 1) -> torch.nn.Module:
+    import segmentation_models_pytorch as smp
+
+    cls = getattr(smp, arch)
+    return cls(encoder_name=encoder, encoder_weights=weights, in_channels=1, classes=classes)
+
+
+def to_tensor(img01: np.ndarray) -> torch.Tensor:
+    """(H, W) float image in [0, 1] -> normalised (1, H, W) tensor."""
+    return torch.from_numpy(((img01 - MEAN) / STD).astype(np.float32))[None]
+
+
+def resize_image(img: np.ndarray, res: int) -> np.ndarray:
+    if img.shape[0] == res:
+        return img
+    return cv2.resize(img, (res, res), interpolation=cv2.INTER_AREA)
+
+
+@torch.no_grad()
+def predict_batch(model: torch.nn.Module, x: torch.Tensor, tta: int = 4) -> torch.Tensor:
+    """Sigmoid probabilities averaged over flip TTA. x: (B, 1, H, W)."""
+    flips = [(), (3,), (2,), (2, 3)][:max(1, tta)]
+    acc = None
+    for f in flips:
+        xi = torch.flip(x, f) if f else x
+        p = torch.sigmoid(model(xi).float())
+        p = torch.flip(p, f) if f else p
+        acc = p if acc is None else acc + p
+    return acc / len(flips)
+
+
+@torch.no_grad()
+def predict_images(models: list[torch.nn.Module], images: list[np.ndarray], res: int,
+                   device: torch.device, tta: int = 4, batch: int = 4,
+                   amp: bool = True) -> np.ndarray:
+    """uint8 (2048, 2048) images -> float16 probabilities at ``res`` (N, res, res).
+
+    Probabilities of several models are averaged.
+    """
+    out = np.zeros((len(images), res, res), np.float16)
+    use_amp = amp and device.type == "cuda"
+    for s in range(0, len(images), batch):
+        xb = torch.stack([to_tensor(resize_image(im, res).astype(np.float32) / 255.0)
+                          for im in images[s:s + batch]]).to(device)
+        acc = None
+        with torch.autocast(device_type=device.type, enabled=use_amp):
+            for m in models:
+                p = predict_batch(m, xb, tta)
+                acc = p if acc is None else acc + p
+        out[s:s + len(xb)] = (acc / len(models))[:, 0].cpu().numpy().astype(np.float16)
+    return out
+
+
+def upsample(prob: np.ndarray, size: int = IMAGE_SIZE) -> np.ndarray:
+    """Bilinear upsampling of a probability map to full resolution (float32)."""
+    p = prob.astype(np.float32)
+    if p.shape[0] == size:
+        return p
+    return cv2.resize(p, (size, size), interpolation=cv2.INTER_LINEAR)

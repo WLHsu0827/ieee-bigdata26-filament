@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+# data and run artefacts are kept outside the repository
+data/
+runs/
+*.zip
+*.npz
+*.pt
+!weights/*.pt
+# never commit credentials
+kaggle.json
+*.pem
+*.key
+*.pfx
+*.p12
+.env

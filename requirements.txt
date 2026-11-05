@@ -1,0 +1,9 @@
+numpy
+pandas
+opencv-python-headless
+scipy
+pycocotools
+torch
+segmentation-models-pytorch
+timm
+matplotlib
