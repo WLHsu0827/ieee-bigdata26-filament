@@ -91,19 +91,32 @@ def find_data_dir(hint: str | None) -> Path:
 
 def write_submission(models, data_dir: Path, res: int, cfg: PostConfig, device, out_csv: Path,
                      tta: int, batch: int, log=print) -> pd.DataFrame:
+    """Predict the test images, post-process, write the CSV and log per-image inference time."""
     test_dir = data_dir / "test" / "test_images"
     files = sorted(test_dir.glob("*.jp*g"))
     rows = []
+    t_read = t_model = t_post = 0.0
     for s in range(0, len(files), 16):
         chunk = files[s:s + 16]
-        probs = predict_images(models, [data.read_image(f) for f in chunk], res, device, tta, batch)
+        t0 = time.time()
+        imgs = [data.read_image(f) for f in chunk]
+        t1 = time.time()
+        probs = predict_images(models, imgs, res, device, tta, batch)
+        t2 = time.time()
         for f, p in zip(chunk, probs):
             lab, _ = instances_from_prob(upsample(p), cfg)
             for k, m in enumerate(label_to_masks(lab), start=1):
                 rows.append((f"{f.stem}_{k}", rle.encode(m)))
+        t_read, t_model, t_post = t_read + t1 - t0, t_model + t2 - t1, t_post + time.time() - t2
     df = pd.DataFrame(rows, columns=["filament_id", "segmentation_rle"])
     df.to_csv(out_csv, index=False)
+    n = max(len(files), 1)
+    timing = {"device": str(device), "tta": tta, "res": res, "n_models": len(models), "images": len(files),
+              "read_s_per_image": t_read / n, "model_s_per_image": t_model / n, "post_s_per_image": t_post / n}
+    (out_csv.parent / "timing.json").write_text(json.dumps(timing, indent=1))
     log(f"submission: {len(files)} images, {len(df)} filaments -> {out_csv}")
+    log(f"inference time per image: read {t_read / n:.3f}s + model {t_model / n:.3f}s + post/encode {t_post / n:.3f}s"
+        f" ({device}, {len(models)} model(s), tta={tta}, res={res})")
     return df
 
 

@@ -8,7 +8,7 @@ a *private* Kaggle dataset so that a disconnected session can resume and the
 results can be retrieved without manual downloads.
 
 Usage:
-    python kaggle/build_colab.py --run c1-r34-1024 -- --res 1024 --encoder resnet34 ...
+    python kaggle/build_colab.py --run c1-r34-1024 --kaggle-user <user> -- --res 1024 --encoder resnet34 ...
 """
 from __future__ import annotations
 
@@ -25,12 +25,12 @@ INTRO = """# Solar filament segmentation -- Colab training run `{run}`
 One-time setup (about 2 minutes):
 
 1. **Runtime -> Change runtime type -> T4 GPU.**
-2. On Kaggle: *Settings -> API Tokens -> Generate New Token* and copy it.
+2. On Kaggle: *Settings -> API -> Generate New Token* and copy it.
    (Do **not** use "Create Legacy API Key": that would expire the key already in use.)
-3. In Colab, open the key icon (Secrets) in the left sidebar and add two secrets with
-   *Notebook access* switched on:
-   * `KAGGLE_API_TOKEN` = the token from step 2
-   * `KAGGLE_USERNAME` = your Kaggle user name
+3. In Colab, open the key icon (Secrets) in the left sidebar and add **one** secret with
+   *Notebook access* switched on: `KAGGLE_API_TOKEN` = the token from step 2.
+   (If Secrets are unavailable, e.g. in the VS Code Colab extension, the notebook asks
+   for the token in a hidden prompt instead. The token is never printed or saved.)
 4. **Runtime -> Run all.**
 
 If the session disconnects, reconnect and *Run all* again: training resumes from the
@@ -42,23 +42,44 @@ private dataset automatically; nothing needs to be downloaded by hand.
 CONFIG = """RUN = {run!r}
 TRAIN_ARGS = {args!r}
 SYNC_MINUTES = 20  # upload the checkpoint at most this often
+DEFAULT_KAGGLE_USER = {user!r}  # public Kaggle user name; override with the optional secret KAGGLE_USERNAME
 """
 
-SETUP = r"""import os, subprocess, sys, json, time, shutil, threading, base64, io, zipfile, glob
+SETUP = r"""import os, subprocess, sys, json, time, shutil, threading, base64, io, zipfile, getpass
 from pathlib import Path
 print(subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True).stdout)
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "kaggle", "segmentation-models-pytorch", "pycocotools"], check=True)
-from google.colab import userdata
-os.environ["KAGGLE_API_TOKEN"] = userdata.get("KAGGLE_API_TOKEN")
-USER = userdata.get("KAGGLE_USERNAME").strip()
+
+def _secret(name):
+    try:
+        from google.colab import userdata
+        value = userdata.get(name)
+        return value.strip() if value else None
+    except Exception:  # secret missing, notebook access off, or userdata unsupported
+        return None
+
+TOKEN = _secret("KAGGLE_API_TOKEN") or getpass.getpass("KAGGLE_API_TOKEN (hidden input): ").strip()
+if not TOKEN:
+    raise RuntimeError("KAGGLE_API_TOKEN is empty: add the Colab secret KAGGLE_API_TOKEN or paste the token at the prompt.")
+USER = _secret("KAGGLE_USERNAME") or DEFAULT_KAGGLE_USER
 SLUG = f"{USER}/fil-colab-{RUN}"
 WORK = Path("/content/work"); OUT = WORK / "out" / RUN; OUT.mkdir(parents=True, exist_ok=True)
+
 def kaggle(*a, check=True):
-    r = subprocess.run(["kaggle", *a], capture_output=True, text=True)
+    # the token is passed only to the kaggle CLI subprocess, never to os.environ or the training process
+    env = dict(os.environ, KAGGLE_API_TOKEN=TOKEN, KAGGLE_USERNAME=USER)
+    r = subprocess.run(["kaggle", *a], capture_output=True, text=True, env=env)
+    r.stdout, r.stderr = r.stdout.replace(TOKEN, "***"), r.stderr.replace(TOKEN, "***")
     if check and r.returncode:
         raise RuntimeError(r.stdout + r.stderr)
     return r
-print("kaggle user:", USER)
+
+_auth = kaggle("competitions", "files", "filament-segmentation-2026", "--page-size", "1", check=False)
+if _auth.returncode != 0:
+    raise RuntimeError("Kaggle authentication failed. Check the Colab secret KAGGLE_API_TOKEN "
+                     "(Secrets panel, Notebook access ON) or paste a valid token at the prompt.\n"
+                     + (_auth.stderr or _auth.stdout)[-300:])
+print("Kaggle authentication OK for", USER)
 """
 
 DATA = r"""DATA = WORK / "data"
@@ -119,7 +140,7 @@ for line in proc.stdout:
     print(line, end="")
 rc = proc.wait(); stop.set()
 print("training exit code", rc)
-sync(f"final rc={rc}", ["model.pt", "post.json", "log.txt", "val_probs.npz", "submission.csv"])
+sync(f"final rc={rc}", ["model.pt", "post.json", "log.txt", "val_probs.npz", "submission.csv", "timing.json"])
 """
 
 
@@ -133,6 +154,7 @@ def cell(kind: str, src: str) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True)
+    ap.add_argument("--kaggle-user", required=True, help="public Kaggle user name owning the private result dataset")
     ap.add_argument("--out", type=Path, default=ROOT / "notebooks" / "colab_train.ipynb")
     ap.add_argument("args", nargs=argparse.REMAINDER)
     a = ap.parse_args()
@@ -143,7 +165,7 @@ def main() -> None:
                      "kernelspec": {"name": "python3", "display_name": "Python 3"},
                      "language_info": {"name": "python"}},
         "cells": [cell("markdown", INTRO.format(run=a.run)),
-                  cell("code", CONFIG.format(run=a.run, args=train_args)),
+                  cell("code", CONFIG.format(run=a.run, args=train_args, user=a.kaggle_user)),
                   cell("code", SETUP), cell("code", DATA),
                   cell("code", CODE.format(payload=payload())),
                   cell("code", RESUME), cell("code", TRAIN)],
