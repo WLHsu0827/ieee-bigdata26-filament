@@ -130,6 +130,7 @@ def main(argv=None) -> None:
     ap.add_argument("--post", type=Path, default=None, help="post-processing JSON (skips tuning)")
     ap.add_argument("--predict-test", action="store_true")
     ap.add_argument("--max-hours", type=float, default=11.0, help="stop training early to fit the time limit")
+    ap.add_argument("--ema", type=float, default=0.0, help="EMA decay of the weights (0 = off)")
     ap.add_argument("--seed", type=int, default=2026)
     ap.add_argument("--limit", type=int, default=0, help="debug: use only N images")
     args = ap.parse_args(argv)
@@ -182,6 +183,10 @@ def main(argv=None) -> None:
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt, lambda s: min(1.0, (s + 1) / warm) * 0.5 * (1 + math.cos(math.pi * min(s, total[0]) / total[0])))
     scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
+    ema = None
+    if args.ema > 0:
+        from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
+        ema = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(args.ema), use_buffers=True)
 
     ckpt = args.out / "last.pt"
     start_epoch = 0
@@ -189,6 +194,8 @@ def main(argv=None) -> None:
         st = torch.load(ckpt, map_location=device, weights_only=False)
         model.load_state_dict(st["model"]), opt.load_state_dict(st["opt"])
         sched.load_state_dict(st["sched"]), scaler.load_state_dict(st["scaler"])
+        if ema is not None and "ema" in st:
+            ema.load_state_dict(st["ema"])
         start_epoch = st["epoch"] + 1
         args.epochs = st.get("epochs", args.epochs)
         total[0] = args.epochs * len(dl)
@@ -220,6 +227,8 @@ def main(argv=None) -> None:
             scaler.step(opt)
             scaler.update()
             sched.step()
+            if ema is not None:
+                ema.update_parameters(model)
             tl += loss.item()
             n += 1
         t_epoch = time.time() - te
@@ -235,17 +244,22 @@ def main(argv=None) -> None:
         last = epoch + 1 == args.epochs
         over = time.time() - t_start > budget
         if len(va_idx) and ((epoch + 1) % args.val_every == 0 or last or over):
-            model.eval()
-            res = score(val_probs([model], tta=1), gt_val, default_cfg)
+            net = ema.module if ema is not None else model
+            net.eval()
+            res = score(val_probs([net], tta=1), gt_val, default_cfg)
             msg += f" | val(tta1) {res}"
         log(msg)
         torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(),
-                    "scaler": scaler.state_dict(), "epoch": epoch, "epochs": args.epochs}, ckpt)
+                    "scaler": scaler.state_dict(), "epoch": epoch, "epochs": args.epochs,
+                    "ema": ema.state_dict() if ema is not None else None}, ckpt.with_suffix(".tmp"))
+        os.replace(ckpt.with_suffix(".tmp"), ckpt)  # atomic: a concurrent uploader never sees a partial file
         if over:
             log("time budget reached, stopping training")
             break
         epoch += 1
 
+    if ema is not None:
+        model = ema.module
     model.eval()
     torch.save({"model": model.state_dict(), "arch": args.arch, "encoder": args.encoder, "res": args.res},
                args.out / "model.pt")
