@@ -14,6 +14,7 @@ import numpy as np
 def geometric(img: np.ndarray, tgt: np.ndarray, rng: np.random.Generator,
               rot: float = 180.0, scale: tuple[float, float] = (0.9, 1.1),
               shift: float = 0.03) -> tuple[np.ndarray, np.ndarray]:
+    """Random flips, rotation, scaling and shift. ``tgt`` may be (H, W) or (H, W, C<=4)."""
     h, w = img.shape
     if rng.random() < 0.5:
         img, tgt = img[:, ::-1], tgt[:, ::-1]
@@ -46,13 +47,16 @@ def photometric(img: np.ndarray, rng: np.random.Generator) -> np.ndarray:
 
 def random_crop(img: np.ndarray, tgt: np.ndarray, size: int, rng: np.random.Generator,
                 p_focus: float = 0.7) -> tuple[np.ndarray, np.ndarray]:
-    """Crop ``size`` x ``size``; with prob ``p_focus`` centre it on a filament pixel."""
+    """Crop ``size`` x ``size``; with prob ``p_focus`` centre it on a filament pixel.
+
+    ``tgt`` may be (H, W) or (H, W, C); channel 0 is the filament target."""
     h, w = img.shape
     if size >= h and size >= w:
         return img, tgt
     cy, cx = None, None
     if rng.random() < p_focus:
-        ys, xs = np.nonzero(tgt > 0.5 * tgt.max()) if tgt.max() > 0 else ([], [])
+        t0 = tgt[..., 0] if tgt.ndim == 3 else tgt
+        ys, xs = np.nonzero(t0 > 0.5 * t0.max()) if t0.max() > 0 else ([], [])
         if len(ys):
             k = rng.integers(len(ys))
             cy, cx = int(ys[k]), int(xs[k])

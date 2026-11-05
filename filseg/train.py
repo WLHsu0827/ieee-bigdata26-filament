@@ -33,16 +33,51 @@ from .tune import grid_search, score
 
 
 # ----------------------------------------------------------------------------- data
+SMALL_REF_AREA = 1200.0   # median filament area (px at 2048)
+SMALL_MAX_WEIGHT = 4.0
+
+
+def small_instance_weights(entries: list[data.Entry], gamma: float, margin: int = 6) -> np.ndarray:
+    """Pixel weights in [1, SMALL_MAX_WEIGHT] emphasising small filaments (full resolution).
+
+    Every annotated filament of area ``A`` gets weight ``clip((A_ref / A) ** gamma, 1, max)`` on its
+    pixels and a ``margin``-px band around them; overlapping weights take the maximum.
+    """
+    from scipy import ndimage as ndi
+
+    wmap = np.ones((data.IMAGE_SIZE, data.IMAGE_SIZE), np.float32)
+    k = np.ones((2 * margin + 1, 2 * margin + 1), bool)
+    for e in entries:
+        for m in e.masks():
+            area = int(m.sum())
+            w = float(np.clip((SMALL_REF_AREA / max(area, 1)) ** gamma, 1.0, SMALL_MAX_WEIGHT))
+            if w <= 1.0:
+                continue
+            ys, xs = np.nonzero(m)
+            y0, y1 = max(ys.min() - margin, 0), min(ys.max() + margin + 1, data.IMAGE_SIZE)
+            x0, x1 = max(xs.min() - margin, 0), min(xs.max() + margin + 1, data.IMAGE_SIZE)
+            region = ndi.binary_dilation(m[y0:y1, x0:x1], structure=k)
+            sub = wmap[y0:y1, x0:x1]
+            sub[region] = np.maximum(sub[region], w)
+    return wmap
+
+
 def _prepare_one(args):
-    path, entries, res = args
-    img = data.read_image(path)
-    tgt = data.soft_target(entries, size=res)
+    path, entries, res, gamma = args
     from .model import resize_image
-    return resize_image(img, res), np.round(tgt * 255).astype(np.uint8)
+    img = data.read_image(path)
+    tgt = np.round(data.soft_target(entries, size=res) * 255).astype(np.uint8)
+    wmap = None
+    if gamma > 0:
+        w = resize_image(small_instance_weights(entries, gamma), res)
+        wmap = np.round((w - 1.0) / (SMALL_MAX_WEIGHT - 1.0) * 255).astype(np.uint8)
+    return resize_image(img, res), tgt, wmap
 
 
-def prepare_arrays(data_dir: Path, groups: dict[str, list[data.Entry]], res: int, workers: int):
-    jobs = [(data_dir / "train" / "train_images" / es[0].file_name, es, res) for es in groups.values()]
+def prepare_arrays(data_dir: Path, groups: dict[str, list[data.Entry]], res: int, workers: int,
+                   small_weight: float = 0.0):
+    jobs = [(data_dir / "train" / "train_images" / es[0].file_name, es, res, small_weight)
+            for es in groups.values()]
     if workers > 0:
         with Pool(workers) as pool:
             out = pool.map(_prepare_one, jobs, chunksize=4)
@@ -50,12 +85,14 @@ def prepare_arrays(data_dir: Path, groups: dict[str, list[data.Entry]], res: int
         out = [_prepare_one(j) for j in jobs]
     imgs = np.stack([o[0] for o in out])
     tgts = np.stack([o[1] for o in out])
-    return imgs, tgts
+    wmaps = np.stack([o[2] for o in out]) if small_weight > 0 else None
+    return imgs, tgts, wmaps
 
 
 class TrainSet(Dataset):
-    def __init__(self, imgs: np.ndarray, tgts: np.ndarray, crop: int, epoch_mult: int = 1):
-        self.imgs, self.tgts, self.crop, self.mult = imgs, tgts, crop, epoch_mult
+    def __init__(self, imgs: np.ndarray, tgts: np.ndarray, crop: int, epoch_mult: int = 1,
+                 wmaps: np.ndarray | None = None):
+        self.imgs, self.tgts, self.crop, self.mult, self.wmaps = imgs, tgts, crop, epoch_mult, wmaps
 
     def __len__(self):
         return len(self.imgs) * self.mult
@@ -65,18 +102,28 @@ class TrainSet(Dataset):
         i = i % len(self.imgs)
         img = self.imgs[i].astype(np.float32) / 255.0
         tgt = self.tgts[i].astype(np.float32) / 255.0
+        if self.wmaps is not None:
+            tgt = np.stack([tgt, self.wmaps[i].astype(np.float32) / 255.0], axis=-1)
         img, tgt = augment.geometric(img, tgt, rng)
         img, tgt = augment.random_crop(img, tgt, self.crop, rng)
         img = augment.photometric(np.ascontiguousarray(img), rng)
-        return to_tensor(img), torch.from_numpy(np.ascontiguousarray(tgt))[None]
+        tgt = np.ascontiguousarray(tgt)
+        tgt = np.moveaxis(tgt, -1, 0) if tgt.ndim == 3 else tgt[None]
+        return to_tensor(img), torch.from_numpy(np.ascontiguousarray(tgt))
 
 
 def loss_fn(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """BCE + global soft Dice. ``target`` is (B, 1, H, W) or (B, 2, H, W) with a weight channel."""
     logits = logits.float()
-    bce = F.binary_cross_entropy_with_logits(logits, target)
+    t = target[:, :1]
+    if target.shape[1] > 1:
+        w = 1.0 + (SMALL_MAX_WEIGHT - 1.0) * target[:, 1:2]
+        bce = (F.binary_cross_entropy_with_logits(logits, t, reduction="none") * w).sum() / w.sum()
+    else:
+        bce = F.binary_cross_entropy_with_logits(logits, t)
     p = torch.sigmoid(logits)
-    inter = (p * target).sum()
-    dice = 1 - (2 * inter + 1) / (p.sum() + target.sum() + 1)
+    inter = (p * t).sum()
+    dice = 1 - (2 * inter + 1) / (p.sum() + t.sum() + 1)
     return bce + dice
 
 
@@ -145,6 +192,8 @@ def main(argv=None) -> None:
     ap.add_argument("--predict-test", action="store_true")
     ap.add_argument("--max-hours", type=float, default=11.0, help="stop training early to fit the time limit")
     ap.add_argument("--ema", type=float, default=0.0, help="EMA decay of the weights (0 = off)")
+    ap.add_argument("--small-weight", type=float, default=0.0,
+                    help="gamma of the small-filament BCE weighting (A_ref/A)^gamma (0 = off)")
     ap.add_argument("--seed", type=int, default=2026)
     ap.add_argument("--limit", type=int, default=0, help="debug: use only N images")
     args = ap.parse_args(argv)
@@ -172,7 +221,7 @@ def main(argv=None) -> None:
         groups = dict(list(groups.items())[:args.limit])
     folds = data.image_folds(list(groups), args.nfolds, args.seed)
     t0 = time.time()
-    imgs, tgts = prepare_arrays(data_dir, groups, args.res, args.workers)
+    imgs, tgts, wmaps = prepare_arrays(data_dir, groups, args.res, args.workers, args.small_weight)
     ids = list(groups)
     log(f"prepared {len(ids)} images at {args.res}px in {time.time() - t0:.0f}s")
 
@@ -188,7 +237,8 @@ def main(argv=None) -> None:
     model = build_model(args.arch, args.encoder, None if args.weights == "none" else args.weights).to(device)
     if device.type == "cuda":
         model = model.to(memory_format=torch.channels_last)
-    ds = TrainSet(imgs[tr_idx], tgts[tr_idx], args.crop or args.res, args.epoch_mult)
+    ds = TrainSet(imgs[tr_idx], tgts[tr_idx], args.crop or args.res, args.epoch_mult,
+                  None if wmaps is None else wmaps[tr_idx])
     dl = DataLoader(ds, batch_size=args.bs, shuffle=True, drop_last=True, num_workers=args.workers,
                     pin_memory=device.type == "cuda", persistent_workers=args.workers > 0)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)

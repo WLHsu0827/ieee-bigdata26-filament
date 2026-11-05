@@ -157,3 +157,15 @@ def test_component_decomposition_equals_official_pq():
         ref = Scorer(probs, gt, workers=1)(PostConfig(threshold=0.5, min_area=min_area, min_max_prob=min_max))
         assert pq_fast == pytest.approx(ref.pq, abs=1e-9)
         assert (tp, fp, fn) == (ref.tp, ref.fp, ref.fn)
+
+
+def test_small_instance_weights():
+    from filseg.data import Entry
+    from filseg.train import small_instance_weights
+    small = [100.0, 100.0, 110.0, 100.0, 110.0, 110.0, 100.0, 110.0, 100.0, 100.0]
+    big = [500.0, 500.0, 600.0, 500.0, 600.0, 600.0, 500.0, 600.0, 500.0, 500.0]
+    e = Entry("010101-img", "010101", "img", "img.jpeg", [small, big], [1, 1])
+    w = small_instance_weights([e], gamma=0.5, margin=3)
+    assert w[105, 105] == pytest.approx((1200 / rle.polygon_to_mask(small).sum()) ** 0.5, rel=1e-5)
+    assert w[105, 98] == w[105, 105]              # margin band
+    assert w[550, 550] == 1.0 and w[50, 50] == 1.0
