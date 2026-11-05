@@ -63,7 +63,7 @@ print("kaggle user:", USER)
 
 DATA = r"""DATA = WORK / "data"
 if not (DATA / "MAGFiLO_1.0_Kaggle_2026").exists():
-    kaggle("competitions", "download", "-c", "filament-segmentation-2026", "-p", str(DATA), "-q")
+    kaggle("competitions", "download", "filament-segmentation-2026", "-p", str(DATA), "-q")
     for z in DATA.glob("*.zip"):
         zipfile.ZipFile(z).extractall(DATA); z.unlink()
 print(sorted(p.name for p in (DATA / "MAGFiLO_1.0_Kaggle_2026").iterdir()))
