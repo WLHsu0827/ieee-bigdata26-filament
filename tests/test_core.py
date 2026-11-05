@@ -178,3 +178,17 @@ def test_tta_inverse_transforms():
     for tta in (1, 2, 4, 8):
         p = predict_batch(torch.nn.Identity(), x, tta=tta)
         assert torch.allclose(p, torch.sigmoid(x), atol=1e-6)
+
+
+def test_compact_checkpoint_roundtrip(tmp_path):
+    import torch
+    from filseg.model import build_model, load_checkpoint, save_checkpoint
+    torch.manual_seed(0)
+    m = build_model("Unet", "resnet18", weights=None).eval()
+    save_checkpoint(m, tmp_path / "m.pt", arch="Unet", encoder="resnet18", res=64)
+    m2, meta = load_checkpoint(tmp_path / "m.pt")
+    assert meta["res"] == 64 and meta["encoder"] == "resnet18"
+    x = torch.randn(1, 1, 64, 64)
+    with torch.no_grad():
+        d = (torch.sigmoid(m(x)) - torch.sigmoid(m2(x))).abs().max().item()
+    assert d < 5e-3

@@ -20,17 +20,15 @@ import pandas as pd
 import torch
 
 from . import data, rle
-from .model import build_model, predict_images, upsample
+from .model import load_checkpoint, predict_images, upsample
 from .postprocess import PostConfig, instances_from_prob, label_to_masks
 
 
 def load_models(paths: list[Path], device: torch.device) -> list[tuple[torch.nn.Module, int]]:
     models = []
     for p in paths:
-        st = torch.load(p, map_location=device, weights_only=False)
-        m = build_model(st["arch"], st["encoder"], weights=None)
-        m.load_state_dict(st["model"])
-        models.append((m.to(device).eval(), int(st["res"])))
+        m, meta = load_checkpoint(p, device)
+        models.append((m, int(meta["res"])))
     return models
 
 

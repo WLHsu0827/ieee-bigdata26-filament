@@ -18,6 +18,32 @@ def build_model(arch: str = "Unet", encoder: str = "resnet34", weights: str | No
     return cls(encoder_name=encoder, encoder_weights=weights, in_channels=1, classes=classes)
 
 
+def compact_state_dict(model: torch.nn.Module) -> dict:
+    """State dict with conv / linear weights (>= 2-D floating tensors) in fp16.
+
+    1-D tensors (biases, BatchNorm statistics) stay in fp32. This halves the file
+    size (ResNet34 U-Net: 98 MB -> 49 MB) so weights fit in a plain Git repository.
+    """
+    out = {}
+    for k, v in model.state_dict().items():
+        v = v.detach().cpu()
+        out[k] = v.half() if v.is_floating_point() and v.dim() >= 2 else v.clone()
+    return out
+
+
+def save_checkpoint(model: torch.nn.Module, path, **meta) -> None:
+    """Save inference weights plus metadata (``arch``, ``encoder``, ``res``, ...)."""
+    torch.save({"model": compact_state_dict(model), **meta}, path)
+
+
+def load_checkpoint(path, device: torch.device | str = "cpu") -> tuple[torch.nn.Module, dict]:
+    """Rebuild the network described by a checkpoint and load its weights (fp32, eval mode)."""
+    st = torch.load(path, map_location="cpu", weights_only=True)
+    model = build_model(st["arch"], st["encoder"], weights=None)
+    model.load_state_dict({k: v.float() if v.is_floating_point() else v for k, v in st["model"].items()})
+    return model.to(device).eval(), {k: v for k, v in st.items() if k != "model"}
+
+
 def to_tensor(img01: np.ndarray) -> torch.Tensor:
     """(H, W) float image in [0, 1] -> normalised (1, H, W) tensor."""
     return torch.from_numpy(((img01 - MEAN) / STD).astype(np.float32))[None]

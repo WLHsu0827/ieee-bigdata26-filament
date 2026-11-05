@@ -27,7 +27,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from . import augment, data, rle
 from .metrics import Crop
-from .model import build_model, predict_images, to_tensor, upsample
+from .model import build_model, predict_images, save_checkpoint, to_tensor, upsample
 from .postprocess import PostConfig, instances_from_prob, label_to_masks
 from .tune import grid_search, score
 
@@ -87,6 +87,12 @@ def prepare_arrays(data_dir: Path, groups: dict[str, list[data.Entry]], res: int
     tgts = np.stack([o[1] for o in out])
     wmaps = np.stack([o[2] for o in out]) if small_weight > 0 else None
     return imgs, tgts, wmaps
+
+
+def _worker_init(_):
+    import cv2
+
+    cv2.setNumThreads(1)  # one OpenCV thread per data-loader worker (avoids oversubscription)
 
 
 class TrainSet(Dataset):
@@ -240,7 +246,8 @@ def main(argv=None) -> None:
     ds = TrainSet(imgs[tr_idx], tgts[tr_idx], args.crop or args.res, args.epoch_mult,
                   None if wmaps is None else wmaps[tr_idx])
     dl = DataLoader(ds, batch_size=args.bs, shuffle=True, drop_last=True, num_workers=args.workers,
-                    pin_memory=device.type == "cuda", persistent_workers=args.workers > 0)
+                    pin_memory=device.type == "cuda", persistent_workers=args.workers > 0,
+                    worker_init_fn=_worker_init)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
     total = [args.epochs * len(dl)]  # mutable: shrunk if the time budget cannot fit all epochs
     warm = min(len(dl), 200)
@@ -325,8 +332,8 @@ def main(argv=None) -> None:
     if ema is not None:
         model = ema.module
     model.eval()
-    torch.save({"model": model.state_dict(), "arch": args.arch, "encoder": args.encoder, "res": args.res},
-               args.out / "model.pt")
+    save_checkpoint(model, args.out / "model.pt", arch=args.arch, encoder=args.encoder, res=args.res,
+                    fold=args.fold, epochs=args.epochs, ema=args.ema)
 
     cfg = default_cfg
     if args.post and args.post.exists():
