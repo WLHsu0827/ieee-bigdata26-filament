@@ -128,3 +128,32 @@ def test_scorer_parallel_matches_sequential():
         s.close()
     assert (seq.tp, seq.fp, seq.fn) == (par.tp, par.fp, par.fn) == (3, 0, 0)
     assert seq.pq == pytest.approx(par.pq) and seq.pq > 0.9
+
+
+def test_component_decomposition_equals_official_pq():
+    from filseg.components import build
+    from filseg.tune import Scorer
+    rng = np.random.default_rng(1)
+    probs, gt = {}, {}
+    for i in range(3):
+        p = np.zeros((256, 256), np.float16)
+        entries = {f"01010{a}-img{i}": [] for a in (1, 2)}
+        for _ in range(4):
+            y, x = rng.integers(10, 220, 2)
+            hh, ww = rng.integers(4, 20, 2)
+            p[y:y + hh, x:x + ww] = rng.uniform(0.55, 0.95)
+            for a, e in enumerate(entries):
+                if rng.random() < 0.8:
+                    full = np.zeros((H, W), bool)
+                    full[y * 8 + a * 3:(y + hh) * 8, x * 8:(x + ww) * 8 + a * 5] = True
+                    entries[e].append(Crop.from_full(full))
+        probs[f"img{i}"] = p
+        gt.update({e: c for e, c in entries.items() if c})
+    shape = PostConfig(threshold=0.5, min_area=0)
+    cs = build(probs, gt, shape, workers=1)
+    for min_area, min_max in [(0, 0.0), (3000, 0.0), (0, 0.8), (6000, 0.7)]:
+        keep = cs.rule(min_area=min_area, min_max_prob=min_max)
+        pq_fast, tp, fp, fn = cs.pq(keep)
+        ref = Scorer(probs, gt, workers=1)(PostConfig(threshold=0.5, min_area=min_area, min_max_prob=min_max))
+        assert pq_fast == pytest.approx(ref.pq, abs=1e-9)
+        assert (tp, fp, fn) == (ref.tp, ref.fp, ref.fn)

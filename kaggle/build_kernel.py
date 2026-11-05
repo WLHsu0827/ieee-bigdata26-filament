@@ -67,6 +67,8 @@ def main() -> None:
     ap.add_argument("--name", required=True)
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--gpu", action="store_true")
+    ap.add_argument("--kernel-sources", nargs="*", default=[], help="other kernels whose output is mounted as input")
+    ap.add_argument("--dataset-sources", nargs="*", default=[])
     ap.add_argument("cmd", nargs=argparse.REMAINDER)
     args = ap.parse_args()
     tokens = args.cmd[1:] if args.cmd and args.cmd[0] == "--" else args.cmd
@@ -91,9 +93,9 @@ def main() -> None:
         "enable_gpu": bool(args.gpu),
         "enable_tpu": False,
         "enable_internet": True,
-        "dataset_sources": [],
+        "dataset_sources": args.dataset_sources,
         "competition_sources": ["filament-segmentation-2026"],
-        "kernel_sources": [],
+        "kernel_sources": args.kernel_sources,
         "model_sources": [],
     }
     (args.out / "kernel-metadata.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
