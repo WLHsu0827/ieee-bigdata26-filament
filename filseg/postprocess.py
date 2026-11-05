@@ -18,7 +18,16 @@ import cv2
 import numpy as np
 from scipy import ndimage as ndi
 
+from . import IMAGE_SIZE
 from .metrics import Crop
+
+
+def upsample(prob: np.ndarray, size: int = IMAGE_SIZE) -> np.ndarray:
+    """Bilinear upsampling of a probability map to full resolution (float32)."""
+    p = prob.astype(np.float32)
+    if p.shape[0] == size:
+        return p
+    return cv2.resize(p, (size, size), interpolation=cv2.INTER_LINEAR)
 
 
 @dataclass

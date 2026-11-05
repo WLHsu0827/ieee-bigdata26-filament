@@ -65,8 +65,6 @@ def predict_images(models: list[torch.nn.Module], images: list[np.ndarray], res:
 
 
 def upsample(prob: np.ndarray, size: int = IMAGE_SIZE) -> np.ndarray:
-    """Bilinear upsampling of a probability map to full resolution (float32)."""
-    p = prob.astype(np.float32)
-    if p.shape[0] == size:
-        return p
-    return cv2.resize(p, (size, size), interpolation=cv2.INTER_LINEAR)
+    """Bilinear upsampling of a probability map to full resolution (see ``postprocess.upsample``)."""
+    from .postprocess import upsample as _up
+    return _up(prob, size)

@@ -9,16 +9,19 @@ from dataclasses import asdict, replace
 import numpy as np
 
 from .metrics import Crop, PQResult, evaluate
-from .model import upsample
-from .postprocess import PostConfig, instances_from_prob, label_to_crops
-
-_SHARED: dict = {}  # probability maps shared with forked workers (copy-on-write)
+from .postprocess import PostConfig, instances_from_prob, label_to_crops, upsample
 
 
 def _instances(job):
-    image_id, cfg = job
-    lab, _ = instances_from_prob(upsample(_SHARED["probs"][image_id]), cfg)
+    image_id, prob, cfg = job
+    lab, _ = instances_from_prob(upsample(prob), cfg)
     return image_id, label_to_crops(lab)
+
+
+def _pool(workers: int):
+    """Worker pool started from a fresh process (never forks a CUDA / multi-threaded parent)."""
+    method = "forkserver" if "forkserver" in mp.get_all_start_methods() else "spawn"
+    return mp.get_context(method).Pool(workers)
 
 
 class Scorer:
@@ -29,16 +32,12 @@ class Scorer:
         self.probs = probs
         self.gt = {k: v for k, v in gt.items() if k.split("-", 1)[1] in ids}
         workers = workers if workers is not None else (os.cpu_count() or 1)
-        self.pool = None
-        if workers > 1 and "fork" in mp.get_all_start_methods():
-            _SHARED["probs"] = probs
-            self.pool = mp.get_context("fork").Pool(workers)
+        self.pool = _pool(workers) if workers > 1 and len(probs) > 1 else None
 
     def predict(self, cfg: PostConfig) -> dict[str, list[Crop]]:
-        jobs = [(k, cfg) for k in self.probs]
+        jobs = [(k, p, cfg) for k, p in self.probs.items()]
         if self.pool is not None:
-            return dict(self.pool.map(_instances, jobs, chunksize=4))
-        _SHARED["probs"] = self.probs
+            return dict(self.pool.imap_unordered(_instances, jobs, chunksize=2))
         return dict(map(_instances, jobs))
 
     def __call__(self, cfg: PostConfig) -> PQResult:

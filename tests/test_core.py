@@ -105,3 +105,26 @@ def test_grow_labels_keeps_instances_disjoint():
     g = grow_labels(lab, 3)
     assert set(np.unique(g)) == {0, 1, 2}
     assert (g == 1).sum() > 100 and (g == 2).sum() > 100
+
+
+def test_scorer_parallel_matches_sequential():
+    from filseg.tune import Scorer
+    rng = np.random.default_rng(0)
+    probs, gt = {}, {}
+    for i in range(3):
+        p = np.zeros((256, 256), np.float16)
+        y, x = rng.integers(10, 200, 2)
+        p[y:y + 20, x:x + 40] = 0.9
+        probs[f"img{i}"] = p
+        full = np.zeros((H, W), bool)
+        full[y * 8:(y + 20) * 8, x * 8:(x + 40) * 8] = True
+        gt[f"010101-img{i}"] = [Crop.from_full(full)]
+    cfg = PostConfig(threshold=0.5, min_area=10)
+    seq = Scorer(probs, gt, workers=1)(cfg)
+    s = Scorer(probs, gt, workers=2)
+    try:
+        par = s(cfg)
+    finally:
+        s.close()
+    assert (seq.tp, seq.fp, seq.fn) == (par.tp, par.fp, par.fn) == (3, 0, 0)
+    assert seq.pq == pytest.approx(par.pq) and seq.pq > 0.9
