@@ -284,9 +284,13 @@ def main(argv=None) -> None:
         model = model.to(memory_format=torch.channels_last)
     ds = TrainSet(imgs, tgts, args.crop or args.res, args.epoch_mult, wmaps, stats, idx=tr_idx)
     del imgs, tgts, wmaps  # only the dataset keeps the arrays; they are released after training
-    dl = DataLoader(ds, batch_size=args.bs, shuffle=True, drop_last=True, num_workers=args.workers,
-                    pin_memory=device.type == "cuda", persistent_workers=args.workers > 0,
-                    worker_init_fn=_worker_init)
+
+    def make_loader(bs: int) -> DataLoader:
+        return DataLoader(ds, batch_size=bs, shuffle=True, drop_last=True, num_workers=args.workers,
+                          pin_memory=device.type == "cuda", persistent_workers=args.workers > 0,
+                          worker_init_fn=_worker_init)
+
+    dl = make_loader(args.bs)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
     total = [args.epochs * len(dl)]  # mutable: shrunk if the time budget cannot fit all epochs
     warm = min(len(dl), 200)
@@ -326,21 +330,36 @@ def main(argv=None) -> None:
     while epoch < args.epochs:
         model.train()
         te, tl, n = time.time(), 0.0, 0
-        for xb, yb in dl:
-            xb, yb = xb.to(device, non_blocking=True), yb.to(device, non_blocking=True)
-            if device.type == "cuda":
-                xb = xb.to(memory_format=torch.channels_last)
-            with torch.autocast(device_type=device.type, enabled=device.type == "cuda"):
-                loss = loss_fn(model(xb), yb)
+        try:
+            for xb, yb in dl:
+                xb, yb = xb.to(device, non_blocking=True), yb.to(device, non_blocking=True)
+                if device.type == "cuda":
+                    xb = xb.to(memory_format=torch.channels_last)
+                with torch.autocast(device_type=device.type, enabled=device.type == "cuda"):
+                    loss = loss_fn(model(xb), yb)
+                opt.zero_grad(set_to_none=True)
+                scaler.scale(loss).backward()
+                scaler.step(opt)
+                scaler.update()
+                sched.step()
+                if ema is not None:
+                    ema.update_parameters(model)
+                tl += loss.item()
+                n += 1
+        except torch.cuda.OutOfMemoryError:
+            # an unexpected memory limit should not waste a GPU session: halve the batch and redo the epoch
+            if epoch != start_epoch or args.bs < 2:
+                raise
+            xb = yb = loss = None
             opt.zero_grad(set_to_none=True)
-            scaler.scale(loss).backward()
-            scaler.step(opt)
-            scaler.update()
-            sched.step()
-            if ema is not None:
-                ema.update_parameters(model)
-            tl += loss.item()
-            n += 1
+            torch.cuda.empty_cache()
+            args.bs //= 2
+            log(f"CUDA out of memory in the first epoch: restarting it with batch size {args.bs}")
+            del dl
+            dl = make_loader(args.bs)
+            total[0] = args.epochs * len(dl)
+            scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
+            continue
         t_epoch = time.time() - te
         if epoch == start_epoch:
             # fit the remaining epochs into the time budget (reserve ~12% for tuning + test inference)

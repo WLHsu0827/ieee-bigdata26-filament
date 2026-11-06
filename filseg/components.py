@@ -203,23 +203,42 @@ def nested_select(sets: dict, folds: dict[str, int], grid: dict | None = None, r
     Returns the nested estimate, the per-fold choices and the final choice (best on all images).
     """
     grid = grid or RULE_GRID
-
-    def objective(key, mask, imgs=None):
-        return pq_sparse(*sets[key].counts(mask, imgs), r=r)
-    cands = [(key, rule, mask) for key, cs in sets.items() for rule, mask in _rule_masks(cs, grid)]
     images = set().union(*(cs.gt_per_image.keys() for cs in sets.values()))
     fold_ids = sorted({folds[i] for i in images})
+    gt_per_image = next(iter(sets.values())).gt_per_image
+    subsets = {k: {i for i in images if folds[i] != k} for k in fold_ids}  # inner images of each outer fold
+    subsets[None] = images
+    n_gt = {k: sum(gt_per_image.get(i, 0) for i in imgs) for k, imgs in subsets.items()}
+    # per shape: numpy columns and, per subset, the rows belonging to it (vectorised counting)
+    cols = {}
+    for key, cs in sets.items():
+        t = cs.table
+        img = t["image_id"].to_numpy() if len(t) else np.array([], object)
+        cols[key] = (t["v"].to_numpy(float) if len(t) else np.zeros(0),
+                     t["n_matched"].to_numpy(int) if len(t) else np.zeros(0, int),
+                     t["n_entries"].to_numpy(int) if len(t) else np.zeros(0, int),
+                     {k: np.isin(img, list(imgs)) for k, imgs in subsets.items()})
+
+    def counts(key, mask, k):
+        v, nm, ne, rows = cols[key]
+        sel = mask & rows[k] if len(v) else np.zeros(0, bool)
+        tp = int(nm[sel].sum())
+        return float(v[sel].sum()), tp, int((ne[sel] - nm[sel]).sum()), n_gt[k] - tp
+
+    def objective(key, mask, k):
+        return pq_sparse(*counts(key, mask, k), r=r)
+
+    cands = [(key, rule, mask) for key, cs in sets.items() for rule, mask in _rule_masks(cs, grid)]
     pooled = np.zeros(4)
     choices = []
     for k in fold_ids:
-        inner = {i for i in images if folds[i] != k}
-        outer = images - inner
-        key, rule, mask = max(cands, key=lambda c: objective(c[0], c[2], inner))
+        key, rule, mask = max(cands, key=lambda c: objective(c[0], c[2], k))
+        outer = images - subsets[k]
         pooled += np.array(sets[key].counts(mask, outer))
-        choices.append({"fold": k, "shape": key, "rule": rule, "inner": objective(key, mask, inner),
-                        "outer": objective(key, mask, outer)})
+        choices.append({"fold": k, "shape": key, "rule": rule, "inner": objective(key, mask, k),
+                        "outer": pq_sparse(*sets[key].counts(mask, outer), r=r)})
     s, tp, fp, fn = pooled
-    key, rule, mask = max(cands, key=lambda c: objective(c[0], c[2]))
+    key, rule, mask = max(cands, key=lambda c: objective(c[0], c[2], None))
     fs, ftp, ffp, ffn = sets[key].counts(mask)
     return {"r": r, "nested_pq": pq_sparse(s, tp, fp, fn, 1.0), "nested_objective": pq_sparse(s, tp, fp, fn, r),
             "nested_counts": {"sum_iou": float(s), "tp": int(tp), "fp": int(fp), "fn": int(fn)},
