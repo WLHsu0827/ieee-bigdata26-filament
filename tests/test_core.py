@@ -260,3 +260,31 @@ def test_disk_normalisation_and_prediction_path():
     assert image_stats(img, "global") == (0.45, 0.225)
     p = predict_images([torch.nn.Identity()], [img], 64, torch.device("cpu"), tta=2, norm="disk")
     assert p.shape == (1, 64, 64) and p.dtype == np.float16
+
+
+def test_component_subset_pq_and_nested_select():
+    from filseg.components import build, nested_select
+    from filseg.tune import Scorer
+    rng = np.random.default_rng(2)
+    probs, gt = {}, {}
+    for i in range(6):
+        p = np.zeros((256, 256), np.float16)
+        for _ in range(3):
+            y, x = rng.integers(10, 220, 2)
+            hh, ww = rng.integers(4, 20, 2)
+            p[y:y + hh, x:x + ww] = rng.uniform(0.55, 0.99)
+            if rng.random() < 0.8:
+                full = np.zeros((H, W), bool)
+                full[y * 8:(y + hh) * 8, x * 8:(x + ww) * 8 + 4] = True
+                gt.setdefault(f"010101-img{i}", []).append(Crop.from_full(full))
+        probs[f"img{i}"] = p
+    cs = build(probs, gt, PostConfig(threshold=0.5, min_area=0), workers=1)
+    subset = ["img0", "img2", "img5"]
+    keep = cs.rule(min_area=2000)
+    ref = Scorer({k: probs[k] for k in subset}, gt, workers=1)(PostConfig(threshold=0.5, min_area=2000))
+    pq, tp, fp, fn = cs.pq(keep, subset)
+    assert pq == pytest.approx(ref.pq, abs=1e-9) and (tp, fp, fn) == (ref.tp, ref.fp, ref.fn)
+    folds = {f"img{i}": i % 3 for i in range(6)}
+    res = nested_select({"t0.5": cs}, folds, {"min_area": [0, 2000], "min_max_prob": [0.0, 0.9], "min_mean_prob": [0.0]})
+    assert len(res["fold_choices"]) == 3 and 0.0 <= res["nested_pq"] <= 1.0
+    assert res["final_rule"]["min_area"] in (0, 2000)

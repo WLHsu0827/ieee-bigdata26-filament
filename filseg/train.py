@@ -257,6 +257,7 @@ def main(argv=None) -> None:
         torch.set_num_threads(args.threads)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log(f"args={vars(args)} device={device} torch={torch.__version__}")
+    (args.out / "args.json").write_text(json.dumps({k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, indent=1))
 
     data_dir = find_data_dir(args.data)
     entries = data.load_entries(data_dir / "train" / data.TRAIN_JSON)

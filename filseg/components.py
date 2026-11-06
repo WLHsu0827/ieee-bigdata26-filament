@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 import cv2
 import numpy as np
@@ -90,15 +90,25 @@ class ComponentSet:
     table: pd.DataFrame      # one row per candidate component
     n_gt: int                # total number of GT filaments over all entries
     shape_cfg: PostConfig
+    gt_per_image: dict = field(default_factory=dict)  # image_id -> GT filaments summed over its entries
 
-    def pq(self, keep: np.ndarray | None = None) -> tuple[float, int, int, int]:
-        """PQ, TP, FP, FN when keeping the components flagged in ``keep``."""
-        t = self.table if keep is None else self.table[np.asarray(keep, bool)]
-        num = t["v"].sum()
-        den = 0.5 * t["n_entries"].sum() + 0.5 * self.n_gt
+    def counts(self, keep: np.ndarray | None = None, images=None) -> tuple[float, int, int, int]:
+        """(sum of matched IoU, TP, FP, FN) for the kept components of ``images`` (default: all)."""
+        n_gt = self.n_gt if images is None else sum(self.gt_per_image.get(i, 0) for i in set(images))
+        if len(self.table) == 0:
+            return 0.0, 0, 0, n_gt
+        sel = np.ones(len(self.table), bool) if keep is None else np.asarray(keep, bool).copy()
+        if images is not None:
+            sel &= self.table["image_id"].isin(set(images)).to_numpy()
+        t = self.table[sel]
         tp = int(t["n_matched"].sum())
-        fp = int((t["n_entries"] - t["n_matched"]).sum())
-        return (num / den if den else 0.0), tp, fp, self.n_gt - tp
+        return float(t["v"].sum()), tp, int((t["n_entries"] - t["n_matched"]).sum()), n_gt - tp
+
+    def pq(self, keep: np.ndarray | None = None, images=None) -> tuple[float, int, int, int]:
+        """PQ, TP, FP, FN when keeping the components flagged in ``keep`` (optionally on a subset of images)."""
+        s, tp, fp, fn = self.counts(keep, images)
+        den = tp + 0.5 * fp + 0.5 * fn
+        return (s / den if den else 0.0), tp, fp, fn
 
     def rule(self, min_area: int = 0, min_max_prob: float = 0.0, min_mean_prob: float = 0.0) -> np.ndarray:
         t = self.table
@@ -121,8 +131,12 @@ def build(probs: dict[str, np.ndarray], gt: dict[str, list[Crop]], shape_cfg: Po
             rows = [f for fs in pool.imap_unordered(_job, jobs, chunksize=2) for f in fs]
     else:
         rows = [f for j in jobs for f in _job(j)]
-    n_gt = sum(len(c) for e, c in gt.items() if e.split("-", 1)[1] in probs)
-    return ComponentSet(pd.DataFrame(rows), n_gt, shape_cfg)
+    gt_per_image: dict[str, int] = {}
+    for e, c in gt.items():
+        image_id = e.split("-", 1)[1]
+        if image_id in probs:
+            gt_per_image[image_id] = gt_per_image.get(image_id, 0) + len(c)
+    return ComponentSet(pd.DataFrame(rows), sum(gt_per_image.values()), shape_cfg, gt_per_image)
 
 
 def fit_scorer(table: pd.DataFrame, n_splits: int = 5, seed: int = 0):
@@ -150,3 +164,48 @@ def best_threshold(cs: ComponentSet, score: np.ndarray, grid=None) -> tuple[floa
     res = [(cs.pq(score > t)[0], t) for t in grid]
     pq, t = max(res)
     return float(t), float(pq)
+
+
+# ----------------------------------------------------------------------------- rule selection
+RULE_GRID = {
+    "min_area": [0, 100, 200, 300, 400, 500, 650, 800, 1000],
+    "min_max_prob": [0.0, 0.5, 0.7, 0.8, 0.9, 0.95, 0.98, 0.99],
+    "min_mean_prob": [0.0, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9],
+}
+
+
+def _rule_masks(cs: ComponentSet, grid: dict) -> list[tuple[dict, np.ndarray]]:
+    import itertools
+
+    keys = list(grid)
+    return [(dict(zip(keys, v)), cs.rule(**dict(zip(keys, v)))) for v in itertools.product(*(grid[k] for k in keys))]
+
+
+def nested_select(sets: dict, folds: dict[str, int], grid: dict | None = None) -> dict:
+    """Nested cross-validation of the post-processing choice.
+
+    ``sets`` maps a shape configuration (any hashable key) to its :class:`ComponentSet`
+    (all built on the same out-of-fold images); ``folds`` maps image_id -> fold.
+    For every outer fold the (shape, rule) with the best PQ on the *other* folds is
+    applied to the held-out fold; the pooled counts give an unbiased PQ estimate.
+    Returns the nested estimate, the per-fold choices and the final choice (best on all images).
+    """
+    grid = grid or RULE_GRID
+    cands = [(key, rule, mask) for key, cs in sets.items() for rule, mask in _rule_masks(cs, grid)]
+    images = set().union(*(cs.gt_per_image.keys() for cs in sets.values()))
+    fold_ids = sorted({folds[i] for i in images})
+    pooled = np.zeros(4)
+    choices = []
+    for k in fold_ids:
+        inner = {i for i in images if folds[i] != k}
+        outer = images - inner
+        key, rule, mask = max(cands, key=lambda c: sets[c[0]].pq(c[2], inner)[0])
+        pooled += np.array(sets[key].counts(mask, outer))
+        choices.append({"fold": k, "shape": key, "rule": rule, "inner_pq": sets[key].pq(mask, inner)[0],
+                        "outer_pq": sets[key].pq(mask, outer)[0]})
+    s, tp, fp, fn = pooled
+    nested = s / (tp + 0.5 * fp + 0.5 * fn) if tp + fp + fn else 0.0
+    key, rule, mask = max(cands, key=lambda c: sets[c[0]].pq(c[2])[0])
+    return {"nested_pq": float(nested), "nested_counts": {"tp": int(tp), "fp": int(fp), "fn": int(fn)},
+            "fold_choices": choices, "final_shape": key, "final_rule": rule,
+            "final_pq_in_sample": float(sets[key].pq(mask)[0])}
