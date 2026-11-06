@@ -19,9 +19,9 @@ import numpy as np
 import pandas as pd
 import torch
 
-from . import data, rle
+from . import data, submission
 from .model import load_checkpoint, predict_images, upsample
-from .postprocess import PostConfig, instances_from_prob, label_to_masks
+from .postprocess import PostConfig, instances_from_prob
 
 
 def load_models(paths: list[Path], device: torch.device) -> list[tuple[torch.nn.Module, int]]:
@@ -55,9 +55,8 @@ def make_submission(models, data_dir: Path, cfg: PostConfig, device: torch.devic
         probs = predict_full(models, [data.read_image(f) for f in part], device, tta, batch)
         for f, p in zip(part, probs):
             lab, _ = instances_from_prob(p, cfg)
-            for k, m in enumerate(label_to_masks(lab), start=1):
-                rows.append((f"{f.stem}_{k}", rle.encode(m)))
-    return pd.DataFrame(rows, columns=["filament_id", "segmentation_rle"])
+            rows += submission.rows_from_label(f.stem, lab)
+    return pd.DataFrame(rows, columns=submission.COLUMNS)
 
 
 def main(argv=None) -> None:
@@ -74,8 +73,9 @@ def main(argv=None) -> None:
     cfg = PostConfig(**json.loads(args.post.read_text()))
     models = load_models(args.weights, device)
     df = make_submission(models, args.data, cfg, device, args.tta, args.batch)
-    df.to_csv(args.out, index=False)
-    print(f"{df['filament_id'].str.rsplit('_', n=1).str[0].nunique()} images, {len(df)} filaments -> {args.out}")
+    test_ids = {p.stem for p in (args.data / "test" / "test_images").glob("*.jp*g")}
+    df, report = submission.write(list(df.itertuples(index=False, name=None)), args.out, test_ids)
+    print(f"{report['images']} images, {len(df)} filaments -> {args.out}; check: {report}")
 
 
 if __name__ == "__main__":

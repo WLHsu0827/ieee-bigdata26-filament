@@ -192,3 +192,18 @@ def test_compact_checkpoint_roundtrip(tmp_path):
     with torch.no_grad():
         d = (torch.sigmoid(m(x)) - torch.sigmoid(m2(x))).abs().max().item()
     assert d < 5e-3
+
+
+def test_submission_check_flags_overlaps_and_duplicates():
+    from filseg.submission import check, rows_from_label
+    lab = np.zeros((H, W), np.int32)
+    lab[10:20, 10:20] = 1
+    lab[50:60, 50:60] = 2
+    rows = rows_from_label("img", lab)
+    assert [r[0] for r in rows] == ["img_1", "img_2"]
+    ok = check(pd.DataFrame(rows, columns=["filament_id", "segmentation_rle"]), {"img", "other"})
+    assert ok["problems"] == [] and ok["test_images_without_prediction"] == 1
+    bad = pd.DataFrame(rows + [("img_3", rows[0][1])], columns=["filament_id", "segmentation_rle"])
+    assert any("overlapping" in p for p in check(bad)["problems"])
+    dup = pd.DataFrame(rows + [rows[0]], columns=["filament_id", "segmentation_rle"])
+    assert any("duplicated" in p for p in check(dup)["problems"])
