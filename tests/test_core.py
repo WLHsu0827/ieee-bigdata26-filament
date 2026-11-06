@@ -303,3 +303,20 @@ def test_pq_sparse_reduces_to_pq():
     from filseg.components import pq_sparse
     assert pq_sparse(60.0, 100, 40, 50, 1.0) == pytest.approx(60.0 / (100 + 20 + 25))
     assert pq_sparse(60.0, 100, 40, 50, 0.7) < pq_sparse(60.0, 100, 40, 50, 1.0)
+
+
+def test_upsample_uint8_and_load_probs(tmp_path):
+    import sys
+    from pathlib import Path
+    from filseg.postprocess import upsample
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from analyze_oof import load_probs
+    u = np.full((4, 4), 255, np.uint8)
+    assert upsample(u, 8).max() == pytest.approx(1.0) and upsample(u, 8).shape == (8, 8)
+    assert upsample(np.full((4, 4), 0.5, np.float16), 4).max() == pytest.approx(0.5)
+    np.savez_compressed(tmp_path / "a.npz", img1=np.full((4, 4), 200, np.uint8), img2=np.zeros((4, 4), np.uint8))
+    np.savez_compressed(tmp_path / "b.npz", img1=np.full((8, 8), 100, np.uint8))   # other encoder, larger res
+    np.savez_compressed(tmp_path / "c.npz", img3=np.full((4, 4), 50, np.uint8))    # another fold
+    p = load_probs([tmp_path / "a.npz", tmp_path / "b.npz", tmp_path / "c.npz"])
+    assert set(p) == {"img1", "img2", "img3"} and p["img1"].dtype == np.uint8
+    assert p["img1"].shape == (8, 8) and int(p["img1"][0, 0]) == 150 and int(p["img3"][0, 0]) == 50

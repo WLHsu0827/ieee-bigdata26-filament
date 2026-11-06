@@ -33,20 +33,25 @@ from filseg.tune import Scorer  # noqa: E402
 
 
 def load_probs(paths: list[Path]) -> dict[str, np.ndarray]:
-    """Load ``val_probs.npz`` files; maps of the same image are averaged (ensembles, resized to
-    the largest resolution), files with disjoint images (different CV folds) are concatenated."""
+    """Load ``val_probs.npz`` files as uint8 maps (probability x 255).
+
+    Maps of the same image are averaged (ensembles; resized to the largest resolution),
+    files with disjoint images (different CV folds) are concatenated. Files are read lazily
+    and averaged one image at a time, so 707 maps at 2048 px need ~3 GB.
+    """
     import cv2
 
-    maps: dict[str, list[np.ndarray]] = {}
-    for p in paths:
-        z = np.load(p)
-        for k in z.files:
-            maps.setdefault(k, []).append(z[k].astype(np.float32) / 255.0)
+    files = [np.load(p) for p in paths]
+    keys = sorted(set().union(*(z.files for z in files)))
     out = {}
-    for k, vs in maps.items():
-        size = max(v.shape[0] for v in vs)
-        vs = [v if v.shape[0] == size else cv2.resize(v, (size, size), interpolation=cv2.INTER_LINEAR) for v in vs]
-        out[k] = (sum(vs) / len(vs)).astype(np.float16)
+    for k in keys:
+        arrs = [z[k] for z in files if k in z.files]
+        size = max(a.shape[0] for a in arrs)
+        acc = np.zeros((size, size), np.float32)
+        for a in arrs:
+            a = a.astype(np.float32)
+            acc += a if a.shape[0] == size else cv2.resize(a, (size, size), interpolation=cv2.INTER_LINEAR)
+        out[k] = np.round(acc / len(arrs)).astype(np.uint8)
     return out
 
 

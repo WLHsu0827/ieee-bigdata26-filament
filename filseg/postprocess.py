@@ -23,8 +23,14 @@ from .metrics import Crop
 
 
 def upsample(prob: np.ndarray, size: int = IMAGE_SIZE) -> np.ndarray:
-    """Bilinear upsampling of a probability map to full resolution (float32)."""
+    """Probability map -> float32 in [0, 1] at full resolution (bilinear).
+
+    uint8 maps are interpreted as probabilities scaled to 0..255 (the storage format
+    of ``val_probs.npz`` / ``test_probs.npz``).
+    """
     p = prob.astype(np.float32)
+    if prob.dtype == np.uint8:
+        p /= 255.0
     if p.shape[0] == size:
         return p
     return cv2.resize(p, (size, size), interpolation=cv2.INTER_LINEAR)
