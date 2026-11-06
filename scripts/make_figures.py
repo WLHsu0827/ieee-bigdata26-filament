@@ -110,9 +110,87 @@ def overlays(probs_npz: Path, post_json: Path, data_dir: Path, image_ids: list[s
     return path
 
 
+def evaluation(probs_paths: list[Path], post_json: Path, gt_cache: Path,
+               path: Path = FIG / "evaluation.png") -> Path:
+    """Rubric figure for out-of-fold predictions, in the style of the organisers' self-evaluation:
+    IoU and Dice distributions of overlapping pairs, one-to-many / many-to-one matching degrees,
+    and recall by filament size. Also writes the numbers to ``<path>.json``."""
+    import json
+    import pickle
+
+    import numpy as np
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from analyze_oof import load_probs
+
+    from filseg import analysis
+    from filseg.metrics import evaluate, matching_degrees
+    from filseg.postprocess import PostConfig
+    from filseg.tune import Scorer
+
+    probs = load_probs([Path(p) for p in probs_paths])
+    with open(gt_cache, "rb") as f:
+        gt = {k: v for k, v in pickle.load(f).items() if k.split("-", 1)[1] in probs}
+    cfg = PostConfig(**json.loads(Path(post_json).read_text()))
+    scorer = Scorer(probs, gt, workers=1)
+    try:
+        preds = scorer.predict(cfg)
+    finally:
+        scorer.close()
+    res, odf = evaluate(gt, preds)
+    iou, dice = analysis.overlap_distributions(odf)
+    gdeg, pdeg = matching_degrees(odf)
+    by_size = analysis.by_size(analysis.gt_table(gt, odf))
+
+    fig, ax = plt.subplots(1, 4, figsize=(22, 4.5))
+    for a, vals, name in ((ax[0], iou, "IoU"), (ax[1], dice, "Dice")):
+        a.hist(vals, bins=np.linspace(0, 1, 51), weights=np.ones(len(vals)) / max(len(vals), 1),
+               color="navy", alpha=0.7, edgecolor="black")
+        a.axvline(vals.mean(), color="crimson", ls="--", label=f"mean {vals.mean():.3f}")
+        if name == "IoU":
+            a.axvline(0.5, color="gray", ls=":", label="match threshold 0.5")
+        a.set_xlabel(name)
+        a.set_ylabel("fraction of overlapping pairs")
+        a.set_title(f"{name} of overlapping GT / prediction pairs")
+        a.legend(fontsize=8)
+    ks = sorted(set(gdeg) | set(pdeg))
+    ax[2].bar([k + 0.5 for k in ks], [gdeg.get(k, 0) for k in ks], width=0.8,
+              color=["crimson" if k == 0 else "forestgreen" for k in ks], edgecolor="black", alpha=0.7)
+    ax[2].bar([-(k + 0.5) for k in ks], [pdeg.get(k, 0) for k in ks], width=0.8,
+              color=["darkorange" if k == 0 else "steelblue" for k in ks], edgecolor="black", alpha=0.7)
+    ax[2].axvline(0, color="black", lw=0.8)
+    ticks = [k + 0.5 for k in ks] + [-(k + 0.5) for k in ks]
+    ax[2].set_xticks(ticks, [f"1:{k}" for k in ks] + [f"{k}:1" for k in ks], rotation=45, fontsize=8)
+    ax[2].set_title("matching degrees (IoU > 0): GT 1:n right, prediction n:1 left")
+    ax[2].set_ylabel("count")
+    labels = [str(s).replace(".0", "") for s in by_size["size"]]
+    ax[3].bar(range(len(labels)), by_size["match_rate"], color="navy", alpha=0.7, edgecolor="black")
+    ax[3].set_xticks(range(len(labels)), labels, rotation=45, fontsize=8)
+    ax[3].set_xlabel("GT filament area (px at 2048)")
+    ax[3].set_ylabel("fraction matched (IoU > 0.5)")
+    ax[3].set_title("recall by filament size")
+    fig.suptitle(f"out-of-fold: {len(probs)} images, {len(gt)} annotator sets -- PQ {res.pq:.4f} "
+                 f"(SQ {res.sq:.3f}, RQ {res.rq:.3f}; TP {res.tp}, FP {res.fp}, FN {res.fn})")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(path, dpi=110)
+    plt.close(fig)
+    summary = {"images": len(probs), "entries": len(gt), "post": json.loads(Path(post_json).read_text()),
+               "pq": res.pq, "sq": res.sq, "rq": res.rq, "tp": res.tp, "fp": res.fp, "fn": res.fn,
+               "mean_iou_overlapping": float(iou.mean()), "mean_dice_overlapping": float(dice.mean()),
+               "gt_degrees": {int(k): int(v) for k, v in sorted(gdeg.items())},
+               "pred_degrees": {int(k): int(v) for k, v in sorted(pdeg.items())},
+               "recall_by_size": {str(s): round(float(r), 4) for s, r in zip(by_size["size"], by_size["match_rate"])},
+               **{k: v for k, v in analysis.aggregation_breakdown(odf).items()}}
+    path.with_suffix(".json").write_text(json.dumps(summary, indent=1))
+    return path
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "pipeline"
     if what == "pipeline":
         print(pipeline_diagram())
     elif what == "overlays":  # overlays <val_probs.npz> <post.json> <data_dir> <image_id> [<image_id> ...]
         print(overlays(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), sys.argv[5:]))
+    elif what == "evaluation":  # evaluation <post.json> <gt_crops.pkl> <out.png> <val_probs.npz> [...]
+        print(evaluation([Path(p) for p in sys.argv[5:]], Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4])))
