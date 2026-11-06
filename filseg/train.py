@@ -359,13 +359,17 @@ def main(argv=None) -> None:
     cfg = default_cfg
     if args.post and args.post.exists():
         cfg = PostConfig(**json.loads(args.post.read_text()))
-    elif len(va_idx):
+    if len(va_idx):
         probs = val_probs([model], tta=args.tta)
         np.savez_compressed(args.out / "val_probs.npz",
                             **{k: np.round(v.astype(np.float32) * 255).astype(np.uint8) for k, v in probs.items()})
-        log("tuning post-processing on hold-out fold")
-        cfg, best, _ = grid_search(probs, gt_val, default_cfg, log=log, workers=args.tune_workers or None)
-        log(f"best post {asdict(cfg)} -> {best}")
+        if args.post and args.post.exists():
+            log(f"val (tta{args.tta}) with given post {asdict(cfg)} -> "
+                f"{score(probs, gt_val, cfg, workers=args.tune_workers or None)}")
+        else:
+            log("tuning post-processing on hold-out fold")
+            cfg, best, _ = grid_search(probs, gt_val, default_cfg, log=log, workers=args.tune_workers or None)
+            log(f"best post {asdict(cfg)} -> {best}")
     (args.out / "post.json").write_text(json.dumps(asdict(cfg), indent=1))
 
     if args.predict_test:
