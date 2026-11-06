@@ -8,7 +8,8 @@ with the exact PQ decomposition of :mod:`filseg.components`.
 Usage:
     python scripts/analyze_oof.py --data <MAGFiLO dir> --probs run_a/val_probs.npz [run_b/val_probs.npz ...] \
         --out <dir>
-Several ``--probs`` files are averaged (ensemble).
+Several ``--probs`` files are averaged (ensemble). Candidate components of every
+shape configuration are cached in ``--out``, so an interrupted run resumes where it stopped.
 """
 from __future__ import annotations
 
@@ -74,7 +75,15 @@ def main() -> None:
     rows, best = [], None
     for thr, close, merge in itertools.product(args.thresholds, args.close, args.merge):
         shape = PostConfig(threshold=thr, close_radius=close, merge_distance=merge, min_area=0)
-        cs = components.build(probs, gt, shape, args.workers)
+        cache = args.out / f"components_t{thr}_c{close}_m{merge}.pkl"  # checkpoint: one file per shape config
+        if cache.exists():
+            with open(cache, "rb") as f:
+                cs = pickle.load(f)
+        else:
+            cs = components.build(probs, gt, shape, args.workers)
+            with open(cache.with_suffix(".tmp"), "wb") as f:
+                pickle.dump(cs, f, protocol=pickle.HIGHEST_PROTOCOL)
+            cache.with_suffix(".tmp").replace(cache)
         for a, mx, mn in rules:
             pq, tp, fp, fn = cs.pq(cs.rule(a, mx, mn))
             rows.append(dict(threshold=thr, close=close, merge=merge, min_area=a, min_max_prob=mx,
