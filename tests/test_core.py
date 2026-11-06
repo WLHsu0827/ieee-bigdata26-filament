@@ -224,3 +224,17 @@ def test_crop_geometric_keeps_alignment():
         assert a[on].mean() > 150               # image and target stay aligned
     w = augment.window(img, 5, 5, 32)
     assert w.shape == (32, 32) and w[:11, :11].sum() == 0
+
+
+def test_ema_warmup_tracks_model_early():
+    import torch
+    from torch.optim.swa_utils import AveragedModel
+    from filseg.train import ema_with_warmup
+    m = torch.nn.Linear(1, 1, bias=False)
+    torch.nn.init.zeros_(m.weight)
+    ema = AveragedModel(m, multi_avg_fn=ema_with_warmup(0.999), use_buffers=True)
+    for _ in range(20):
+        m.weight.data += 1.0
+        ema.update_parameters(m)
+    # plain EMA(0.999) would still be ~0.2; with warm-up the average follows the trajectory
+    assert ema.module.weight.item() > 8.0

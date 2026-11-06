@@ -124,6 +124,21 @@ class TrainSet(Dataset):
         return to_tensor(img), torch.from_numpy(tgt)
 
 
+def ema_with_warmup(decay: float):
+    """``multi_avg_fn`` for ``AveragedModel``: EMA whose decay ramps up as ``(1 + n) / (10 + n)``.
+
+    Without the ramp, an EMA with decay 0.999 keeps a weight of 0.999**n on the
+    (randomly initialised decoder of the) model at the first step, which makes
+    early validation meaningless and can still bias short runs.
+    """
+    @torch.no_grad()
+    def fn(ema_params, cur_params, num_averaged):
+        n = float(num_averaged)
+        torch._foreach_lerp_(ema_params, cur_params, 1.0 - min(decay, (1.0 + n) / (10.0 + n)))
+
+    return fn
+
+
 def loss_fn(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     """BCE + global soft Dice. ``target`` is (B, 1, H, W) or (B, 2, H, W) with a weight channel."""
     logits = logits.float()
@@ -262,8 +277,8 @@ def main(argv=None) -> None:
     scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
     ema = None
     if args.ema > 0:
-        from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
-        ema = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(args.ema), use_buffers=True)
+        from torch.optim.swa_utils import AveragedModel
+        ema = AveragedModel(model, multi_avg_fn=ema_with_warmup(args.ema), use_buffers=True)
 
     ckpt = args.out / "last.pt"
     start_epoch = 0
