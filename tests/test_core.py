@@ -297,3 +297,9 @@ def test_cv_argument_split(capsys):
     out = capsys.readouterr().out
     assert "--fold 1 --out o" in out.replace("\\", "/") and "--fold 2" in out
     assert out.count("--encoder resnet34 --bs 8 --predict-test") == 2 and "--max-hours 1.000" in out
+
+
+def test_pq_sparse_reduces_to_pq():
+    from filseg.components import pq_sparse
+    assert pq_sparse(60.0, 100, 40, 50, 1.0) == pytest.approx(60.0 / (100 + 20 + 25))
+    assert pq_sparse(60.0, 100, 40, 50, 0.7) < pq_sparse(60.0, 100, 40, 50, 1.0)

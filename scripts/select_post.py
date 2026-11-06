@@ -39,6 +39,8 @@ def main() -> None:
     ap.add_argument("--nfolds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=2026)
     ap.add_argument("--workers", type=int, default=None)
+    ap.add_argument("--r", type=float, nargs="+", default=[1.0],
+                    help="label rates of the objective (1.0 = official PQ; < 1 models sparser test labels)")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -64,18 +66,22 @@ def main() -> None:
         sets[(thr, close)] = cs
         print(f"shape t={thr} close={close}: {len(cs.table)} candidates [{time.time() - t0:.0f}s]", flush=True)
 
-    res = components.nested_select(sets, folds)
-    thr, close = res["final_shape"]
-    cfg = replace(PostConfig(threshold=thr, close_radius=close), **res["final_rule"])
-    for c in res["fold_choices"]:
-        print(f"outer fold {c['fold']}: shape {c['shape']} rule {c['rule']} inner {c['inner_pq']:.4f} "
-              f"outer {c['outer_pq']:.4f}")
-    print(f"nested PQ {res['nested_pq']:.4f} {res['nested_counts']} | final {asdict(cfg)} "
-          f"(in-sample {res['final_pq_in_sample']:.4f}) [{time.time() - t0:.0f}s]")
-    (args.out / "post_selected.json").write_text(json.dumps(asdict(cfg), indent=1))
-    res["fold_choices"] = [{**c, "shape": list(c["shape"])} for c in res["fold_choices"]]
-    res["final_shape"] = list(res["final_shape"])
-    (args.out / "selection.json").write_text(json.dumps(res, indent=1))
+    for r in args.r:
+        res = components.nested_select(sets, folds, r=r)
+        thr, close = res["final_shape"]
+        cfg = replace(PostConfig(threshold=thr, close_radius=close), **res["final_rule"])
+        print(f"--- objective: PQ with label rate r = {r}")
+        for c in res["fold_choices"]:
+            print(f"outer fold {c['fold']}: shape {c['shape']} rule {c['rule']} inner {c['inner']:.4f} "
+                  f"outer {c['outer']:.4f}")
+        print(f"nested PQ {res['nested_pq']:.4f} (objective {res['nested_objective']:.4f}) {res['nested_counts']}\n"
+              f"final {asdict(cfg)} (in-sample PQ {res['final_pq_in_sample']:.4f}, "
+              f"objective {res['final_objective_in_sample']:.4f}) [{time.time() - t0:.0f}s]", flush=True)
+        tag = "" if r == 1.0 else f"_r{r}"
+        (args.out / f"post_selected{tag}.json").write_text(json.dumps(asdict(cfg), indent=1))
+        res["fold_choices"] = [{**c, "shape": list(c["shape"])} for c in res["fold_choices"]]
+        res["final_shape"] = list(res["final_shape"])
+        (args.out / f"selection{tag}.json").write_text(json.dumps(res, indent=1))
 
 
 if __name__ == "__main__":

@@ -181,16 +181,31 @@ def _rule_masks(cs: ComponentSet, grid: dict) -> list[tuple[dict, np.ndarray]]:
     return [(dict(zip(keys, v)), cs.rule(**dict(zip(keys, v)))) for v in itertools.product(*(grid[k] for k in keys))]
 
 
-def nested_select(sets: dict, folds: dict[str, int], grid: dict | None = None) -> dict:
+def pq_sparse(s: float, tp: float, fp: float, fn: float, r: float = 1.0) -> float:
+    """Expected PQ if each GT filament were labelled only with probability ``r`` (``r = 1``: plain PQ).
+
+    A matched prediction then loses its label with probability 1 - r (becomes an FP) and
+    unmatched GT count only with weight r. Used to study sparser test labelling; with
+    r = 1 this is exactly the official pooled PQ.
+    """
+    den = r * tp + 0.5 * fp + 0.5 * (1 - r) * tp + 0.5 * r * fn
+    return r * s / den if den else 0.0
+
+
+def nested_select(sets: dict, folds: dict[str, int], grid: dict | None = None, r: float = 1.0) -> dict:
     """Nested cross-validation of the post-processing choice.
 
     ``sets`` maps a shape configuration (any hashable key) to its :class:`ComponentSet`
     (all built on the same out-of-fold images); ``folds`` maps image_id -> fold.
-    For every outer fold the (shape, rule) with the best PQ on the *other* folds is
-    applied to the held-out fold; the pooled counts give an unbiased PQ estimate.
+    For every outer fold the (shape, rule) with the best objective on the *other* folds is
+    applied to the held-out fold; the pooled counts give an unbiased estimate. The
+    objective is :func:`pq_sparse` with label rate ``r`` (``r = 1``: official PQ).
     Returns the nested estimate, the per-fold choices and the final choice (best on all images).
     """
     grid = grid or RULE_GRID
+
+    def objective(key, mask, imgs=None):
+        return pq_sparse(*sets[key].counts(mask, imgs), r=r)
     cands = [(key, rule, mask) for key, cs in sets.items() for rule, mask in _rule_masks(cs, grid)]
     images = set().union(*(cs.gt_per_image.keys() for cs in sets.values()))
     fold_ids = sorted({folds[i] for i in images})
@@ -199,13 +214,15 @@ def nested_select(sets: dict, folds: dict[str, int], grid: dict | None = None) -
     for k in fold_ids:
         inner = {i for i in images if folds[i] != k}
         outer = images - inner
-        key, rule, mask = max(cands, key=lambda c: sets[c[0]].pq(c[2], inner)[0])
+        key, rule, mask = max(cands, key=lambda c: objective(c[0], c[2], inner))
         pooled += np.array(sets[key].counts(mask, outer))
-        choices.append({"fold": k, "shape": key, "rule": rule, "inner_pq": sets[key].pq(mask, inner)[0],
-                        "outer_pq": sets[key].pq(mask, outer)[0]})
+        choices.append({"fold": k, "shape": key, "rule": rule, "inner": objective(key, mask, inner),
+                        "outer": objective(key, mask, outer)})
     s, tp, fp, fn = pooled
-    nested = s / (tp + 0.5 * fp + 0.5 * fn) if tp + fp + fn else 0.0
-    key, rule, mask = max(cands, key=lambda c: sets[c[0]].pq(c[2])[0])
-    return {"nested_pq": float(nested), "nested_counts": {"tp": int(tp), "fp": int(fp), "fn": int(fn)},
+    key, rule, mask = max(cands, key=lambda c: objective(c[0], c[2]))
+    fs, ftp, ffp, ffn = sets[key].counts(mask)
+    return {"r": r, "nested_pq": pq_sparse(s, tp, fp, fn, 1.0), "nested_objective": pq_sparse(s, tp, fp, fn, r),
+            "nested_counts": {"sum_iou": float(s), "tp": int(tp), "fp": int(fp), "fn": int(fn)},
             "fold_choices": choices, "final_shape": key, "final_rule": rule,
-            "final_pq_in_sample": float(sets[key].pq(mask)[0])}
+            "final_pq_in_sample": pq_sparse(fs, ftp, ffp, ffn, 1.0),
+            "final_objective_in_sample": pq_sparse(fs, ftp, ffp, ffn, r)}
