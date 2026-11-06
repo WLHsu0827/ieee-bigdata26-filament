@@ -288,3 +288,12 @@ def test_component_subset_pq_and_nested_select():
     res = nested_select({"t0.5": cs}, folds, {"min_area": [0, 2000], "min_max_prob": [0.0, 0.9], "min_mean_prob": [0.0]})
     assert len(res["fold_choices"]) == 3 and 0.0 <= res["nested_pq"] <= 1.0
     assert res["final_rule"]["min_area"] in (0, 2000)
+
+
+def test_cv_argument_split(capsys):
+    from filseg import cv
+    cv.main(["--folds", "1", "2", "--out", "o", "--max-hours", "2", "--dry-run", "--",
+             "--encoder", "resnet34", "--bs", "8", "--predict-test"])
+    out = capsys.readouterr().out
+    assert "--fold 1 --out o" in out.replace("\\", "/") and "--fold 2" in out
+    assert out.count("--encoder resnet34 --bs 8 --predict-test") == 2 and "--max-hours 1.000" in out
