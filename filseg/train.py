@@ -325,6 +325,9 @@ def main(argv=None) -> None:
         return {ids[i]: p[k] for k, i in enumerate(va_idx)}
 
     default_cfg = PostConfig(threshold=0.5, min_area=150)
+    monitor_cfg = default_cfg
+    if args.post and args.post.exists():  # mid-training validation comparable with the final number
+        monitor_cfg = PostConfig(**json.loads(args.post.read_text()))
     budget = args.max_hours * 3600
     epoch = start_epoch
     while epoch < args.epochs:
@@ -375,7 +378,7 @@ def main(argv=None) -> None:
         if len(va_idx) and ((epoch + 1) % args.val_every == 0 or last or over):
             net = ema.module if ema is not None else model
             net.eval()
-            res = score(val_probs([net], tta=1), gt_val, default_cfg, workers=args.tune_workers or None)
+            res = score(val_probs([net], tta=1), gt_val, monitor_cfg, workers=args.tune_workers or None)
             msg += f" | val(tta1) {res}"
         log(msg)
         torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(),
