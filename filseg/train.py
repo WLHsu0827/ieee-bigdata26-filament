@@ -78,14 +78,22 @@ def prepare_arrays(data_dir: Path, groups: dict[str, list[data.Entry]], res: int
                    small_weight: float = 0.0):
     jobs = [(data_dir / "train" / "train_images" / es[0].file_name, es, res, small_weight)
             for es in groups.values()]
-    if workers > 0:
-        with Pool(workers) as pool:
-            out = pool.map(_prepare_one, jobs, chunksize=4)
-    else:
-        out = [_prepare_one(j) for j in jobs]
-    imgs = np.stack([o[0] for o in out])
-    tgts = np.stack([o[1] for o in out])
-    wmaps = np.stack([o[2] for o in out]) if small_weight > 0 else None
+    n = len(jobs)
+    # preallocate and fill in place: peak memory stays ~1x the arrays even at 2048 px
+    imgs = np.empty((n, res, res), np.uint8)
+    tgts = np.empty((n, res, res), np.uint8)
+    wmaps = np.empty((n, res, res), np.uint8) if small_weight > 0 else None
+    pool = Pool(workers) if workers > 0 else None
+    try:
+        it = pool.imap(_prepare_one, jobs, chunksize=2) if pool else map(_prepare_one, jobs)
+        for k, (img, tgt, wmap) in enumerate(it):
+            imgs[k], tgts[k] = img, tgt
+            if wmaps is not None:
+                wmaps[k] = wmap
+    finally:
+        if pool:
+            pool.close()
+            pool.join()
     return imgs, tgts, wmaps
 
 
@@ -106,16 +114,14 @@ class TrainSet(Dataset):
     def __getitem__(self, i):
         rng = np.random.default_rng(torch.randint(0, 2**31, (1,)).item())
         i = i % len(self.imgs)
-        img = self.imgs[i].astype(np.float32) / 255.0
-        tgt = self.tgts[i].astype(np.float32) / 255.0
-        if self.wmaps is not None:
-            tgt = np.stack([tgt, self.wmaps[i].astype(np.float32) / 255.0], axis=-1)
-        img, tgt = augment.geometric(img, tgt, rng)
-        img, tgt = augment.random_crop(img, tgt, self.crop, rng)
-        img = augment.photometric(np.ascontiguousarray(img), rng)
-        tgt = np.ascontiguousarray(tgt)
-        tgt = np.moveaxis(tgt, -1, 0) if tgt.ndim == 3 else tgt[None]
-        return to_tensor(img), torch.from_numpy(np.ascontiguousarray(tgt))
+        arrays = [self.imgs[i], self.tgts[i]] + ([self.wmaps[i]] if self.wmaps is not None else [])
+        if self.crop < arrays[0].shape[0]:
+            arrays = augment.crop_geometric(arrays, self.crop, rng, focus=1)
+        else:
+            arrays = augment.geometric(arrays, rng)
+        img = augment.photometric(arrays[0].astype(np.float32) / 255.0, rng)
+        tgt = np.stack([a.astype(np.float32) / 255.0 for a in arrays[1:]])
+        return to_tensor(img), torch.from_numpy(tgt)
 
 
 def loss_fn(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -184,6 +190,7 @@ def main(argv=None) -> None:
     ap.add_argument("--weights", default="imagenet", help="encoder pre-training (\"none\" = random init)")
     ap.add_argument("--epochs", type=int, default=25)
     ap.add_argument("--bs", type=int, default=8)
+    ap.add_argument("--infer-bs", type=int, default=0, help="inference batch size (0 = --bs)")
     ap.add_argument("--lr", type=float, default=5e-4)
     ap.add_argument("--wd", type=float, default=1e-4)
     ap.add_argument("--fold", type=int, default=0, help="hold-out fold, -1 = train on everything")
@@ -191,6 +198,7 @@ def main(argv=None) -> None:
     ap.add_argument("--val-every", type=int, default=5)
     ap.add_argument("--tta", type=int, default=4)
     ap.add_argument("--workers", type=int, default=min(4, os.cpu_count() or 1))
+    ap.add_argument("--tune-workers", type=int, default=0, help="processes for post-processing scoring (0 = all CPUs)")
     ap.add_argument("--threads", type=int, default=0)
     ap.add_argument("--post", type=Path, default=None, help="post-processing JSON (skips tuning)")
     ap.add_argument("--predict-test", action="store_true")
@@ -276,7 +284,7 @@ def main(argv=None) -> None:
         if val_imgs[0] is None:
             val_imgs = [data.read_image(data_dir / "train" / "train_images" / groups[ids[i]][0].file_name)
                         for i in va_idx]
-        p = predict_images(models, val_imgs, args.res, device, tta=tta, batch=args.bs)
+        p = predict_images(models, val_imgs, args.res, device, tta=tta, batch=args.infer_bs or args.bs)
         return {ids[i]: p[k] for k, i in enumerate(va_idx)}
 
     default_cfg = PostConfig(threshold=0.5, min_area=150)
@@ -315,7 +323,7 @@ def main(argv=None) -> None:
         if len(va_idx) and ((epoch + 1) % args.val_every == 0 or last or over):
             net = ema.module if ema is not None else model
             net.eval()
-            res = score(val_probs([net], tta=1), gt_val, default_cfg)
+            res = score(val_probs([net], tta=1), gt_val, default_cfg, workers=args.tune_workers or None)
             msg += f" | val(tta1) {res}"
         log(msg)
         torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(),
@@ -341,13 +349,13 @@ def main(argv=None) -> None:
         np.savez_compressed(args.out / "val_probs.npz",
                             **{k: np.round(v.astype(np.float32) * 255).astype(np.uint8) for k, v in probs.items()})
         log("tuning post-processing on hold-out fold")
-        cfg, best, _ = grid_search(probs, gt_val, default_cfg, log=log)
+        cfg, best, _ = grid_search(probs, gt_val, default_cfg, log=log, workers=args.tune_workers or None)
         log(f"best post {asdict(cfg)} -> {best}")
     (args.out / "post.json").write_text(json.dumps(asdict(cfg), indent=1))
 
     if args.predict_test:
         write_submission([model], data_dir, args.res, cfg, device, args.out / "submission.csv",
-                         args.tta, args.bs, log)
+                         args.tta, args.infer_bs or args.bs, log)
     log(f"done in {(time.time() - t_start) / 3600:.2f} h")
 
 

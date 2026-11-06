@@ -207,3 +207,20 @@ def test_submission_check_flags_overlaps_and_duplicates():
     assert any("overlapping" in p for p in check(bad)["problems"])
     dup = pd.DataFrame(rows + [rows[0]], columns=["filament_id", "segmentation_rle"])
     assert any("duplicated" in p for p in check(dup)["problems"])
+
+
+def test_crop_geometric_keeps_alignment():
+    from filseg import augment
+    rng = np.random.default_rng(0)
+    img = np.zeros((512, 512), np.uint8)
+    tgt = np.zeros((512, 512), np.uint8)
+    img[200:260, 300:310] = 200
+    tgt[200:260, 300:310] = 255
+    for _ in range(20):
+        a, t = augment.crop_geometric([img, tgt], 128, rng, focus=1, p_focus=1.0)
+        assert a.shape == t.shape == (128, 128) and a.dtype == np.uint8
+        assert t.max() > 0                       # focus crop contains the filament
+        on = t > 127
+        assert a[on].mean() > 150               # image and target stay aligned
+    w = augment.window(img, 5, 5, 32)
+    assert w.shape == (32, 32) and w[:11, :11].sum() == 0

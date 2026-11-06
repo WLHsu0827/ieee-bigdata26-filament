@@ -1,9 +1,13 @@
-"""Data augmentation for (image, soft target) pairs, implemented with OpenCV.
+"""Data augmentation for (image, soft target[, weight map]) samples, implemented with OpenCV.
 
 Solar H-alpha full-disk images have no preferred orientation for the purpose
-of segmentation, so we use flips, arbitrary rotations about the image centre,
-mild scaling, and photometric jitter that mimics seeing / exposure changes
-between GONG sites.
+of segmentation, so we use flips, arbitrary rotations, mild scaling and
+photometric jitter that mimics seeing / exposure changes between GONG sites.
+
+All geometric functions take a list of arrays of equal height and width
+(``[image, target, ...]``, any dtype) and apply the *same* transform to each.
+They work on uint8 arrays so that large (2048 px) images are never converted
+to float before cropping.
 """
 from __future__ import annotations
 
@@ -11,28 +15,63 @@ import cv2
 import numpy as np
 
 
-def geometric(img: np.ndarray, tgt: np.ndarray, rng: np.random.Generator,
-              rot: float = 180.0, scale: tuple[float, float] = (0.9, 1.1),
-              shift: float = 0.03) -> tuple[np.ndarray, np.ndarray]:
-    """Random flips, rotation, scaling and shift. ``tgt`` may be (H, W) or (H, W, C<=4)."""
-    h, w = img.shape
+def geometric(arrays: list[np.ndarray], rng: np.random.Generator, rot: float = 180.0,
+              scale: tuple[float, float] = (0.9, 1.1), shift: float = 0.03) -> list[np.ndarray]:
+    """Random horizontal / vertical flips, rotation, scaling and shift (zero padding)."""
+    h, w = arrays[0].shape[:2]
     if rng.random() < 0.5:
-        img, tgt = img[:, ::-1], tgt[:, ::-1]
+        arrays = [a[:, ::-1] for a in arrays]
     if rng.random() < 0.5:
-        img, tgt = img[::-1], tgt[::-1]
-    angle = rng.uniform(-rot, rot)
-    s = rng.uniform(*scale)
-    m = cv2.getRotationMatrix2D((w / 2, h / 2), angle, s)
+        arrays = [a[::-1] for a in arrays]
+    m = cv2.getRotationMatrix2D((w / 2, h / 2), rng.uniform(-rot, rot), rng.uniform(*scale))
     m[:, 2] += rng.uniform(-shift, shift, size=2) * (w, h)
-    img = cv2.warpAffine(np.ascontiguousarray(img), m, (w, h), flags=cv2.INTER_LINEAR,
-                         borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-    tgt = cv2.warpAffine(np.ascontiguousarray(tgt), m, (w, h), flags=cv2.INTER_LINEAR,
-                         borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-    return img, tgt
+    return [cv2.warpAffine(np.ascontiguousarray(a), m, (w, h), flags=cv2.INTER_LINEAR,
+                           borderMode=cv2.BORDER_CONSTANT, borderValue=0) for a in arrays]
+
+
+def focus_center(tgt: np.ndarray, rng: np.random.Generator, p_focus: float = 0.7) -> tuple[int, int]:
+    """With probability ``p_focus`` a random filament pixel (target >= half its max), else a random pixel."""
+    h, w = tgt.shape[:2]
+    if rng.random() < p_focus:
+        mx = float(tgt.max())
+        if mx > 0:
+            ys, xs = np.nonzero(tgt >= 0.5 * mx)
+            k = rng.integers(len(ys))
+            return int(ys[k]), int(xs[k])
+    return int(rng.integers(h)), int(rng.integers(w))
+
+
+def window(a: np.ndarray, cy: int, cx: int, size: int) -> np.ndarray:
+    """``size`` x ``size`` window centred at (cy, cx); zero-padded where it leaves the array."""
+    h, w = a.shape[:2]
+    y0, x0 = cy - size // 2, cx - size // 2
+    out = np.zeros((size, size) + a.shape[2:], a.dtype)
+    ys, ye, xs, xe = max(y0, 0), min(y0 + size, h), max(x0, 0), min(x0 + size, w)
+    if ys < ye and xs < xe:
+        out[ys - y0:ye - y0, xs - x0:xe - x0] = a[ys:ye, xs:xe]
+    return out
+
+
+def crop_geometric(arrays: list[np.ndarray], size: int, rng: np.random.Generator, focus: int = 1,
+                   jitter: float = 0.25, src_factor: float = 1.6, p_focus: float = 0.7,
+                   **geo) -> list[np.ndarray]:
+    """Random ``size`` x ``size`` crop with the full :func:`geometric` augmentation.
+
+    A window of ``src_factor * size`` px (large enough to cover any rotation at
+    scale <= 1.1) is cut around a (usually filament-centred) point of
+    ``arrays[focus]``, transformed, and centre-cropped to ``size``.
+    """
+    cy, cx = focus_center(arrays[focus], rng, p_focus)
+    j = int(size * jitter)
+    cy, cx = cy + int(rng.integers(-j, j + 1)), cx + int(rng.integers(-j, j + 1))
+    src = int(round(size * src_factor))
+    out = geometric([window(a, cy, cx, src) for a in arrays], rng, **geo)
+    o = (src - size) // 2
+    return [a[o:o + size, o:o + size] for a in out]
 
 
 def photometric(img: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-    """img float32 in [0, 1]."""
+    """Gamma, contrast / brightness, blur and noise jitter; ``img`` float32 in [0, 1]."""
     if rng.random() < 0.8:
         img = np.power(np.clip(img, 0, 1), rng.uniform(0.75, 1.35))
     if rng.random() < 0.8:
@@ -43,25 +82,3 @@ def photometric(img: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     if rng.random() < 0.2:
         img = img + rng.normal(0, rng.uniform(0.005, 0.025), img.shape).astype(np.float32)
     return np.clip(img, 0, 1).astype(np.float32)
-
-
-def random_crop(img: np.ndarray, tgt: np.ndarray, size: int, rng: np.random.Generator,
-                p_focus: float = 0.7) -> tuple[np.ndarray, np.ndarray]:
-    """Crop ``size`` x ``size``; with prob ``p_focus`` centre it on a filament pixel.
-
-    ``tgt`` may be (H, W) or (H, W, C); channel 0 is the filament target."""
-    h, w = img.shape
-    if size >= h and size >= w:
-        return img, tgt
-    cy, cx = None, None
-    if rng.random() < p_focus:
-        t0 = tgt[..., 0] if tgt.ndim == 3 else tgt
-        ys, xs = np.nonzero(t0 > 0.5 * t0.max()) if t0.max() > 0 else ([], [])
-        if len(ys):
-            k = rng.integers(len(ys))
-            cy, cx = int(ys[k]), int(xs[k])
-    if cy is None:
-        cy, cx = int(rng.integers(h)), int(rng.integers(w))
-    y0 = int(np.clip(cy - size // 2 + rng.integers(-size // 4, size // 4 + 1), 0, h - size))
-    x0 = int(np.clip(cx - size // 2 + rng.integers(-size // 4, size // 4 + 1), 0, w - size))
-    return img[y0:y0 + size, x0:x0 + size], tgt[y0:y0 + size, x0:x0 + size]
