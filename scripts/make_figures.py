@@ -110,7 +110,7 @@ def overlays(probs_npz: Path, post_json: Path, data_dir: Path, image_ids: list[s
     return path
 
 
-def evaluation(probs_paths: list[Path], post_json: Path, gt_cache: Path,
+def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
                path: Path = FIG / "evaluation.png") -> Path:
     """Rubric figure for out-of-fold predictions, in the style of the organisers' self-evaluation:
     IoU and Dice distributions of overlapping pairs, one-to-many / many-to-one matching degrees,
@@ -128,9 +128,17 @@ def evaluation(probs_paths: list[Path], post_json: Path, gt_cache: Path,
     from filseg.postprocess import PostConfig
     from filseg.tune import Scorer
 
-    probs = load_probs([Path(p) for p in probs_paths])
-    with open(gt_cache, "rb") as f:
-        gt = {k: v for k, v in pickle.load(f).items() if k.split("-", 1)[1] in probs}
+    from types import SimpleNamespace
+
+    from analyze_oof import load_gt
+    from cli_utils import expand
+
+    probs = load_probs(expand(probs_paths))
+    if gt_cache is not None and Path(gt_cache).exists():
+        with open(gt_cache, "rb") as f:
+            gt = {k: v for k, v in pickle.load(f).items() if k.split("-", 1)[1] in probs}
+    else:  # build the ground truth from the competition data (e.g. inside a Kaggle kernel)
+        gt = load_gt(SimpleNamespace(gt_cache=None, data=None), set(probs))
     cfg = PostConfig(**json.loads(Path(post_json).read_text()))
     scorer = Scorer(probs, gt, workers=1)
     try:
@@ -192,5 +200,6 @@ if __name__ == "__main__":
         print(pipeline_diagram())
     elif what == "overlays":  # overlays <val_probs.npz> <post.json> <data_dir> <image_id> [<image_id> ...]
         print(overlays(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), sys.argv[5:]))
-    elif what == "evaluation":  # evaluation <post.json> <gt_crops.pkl> <out.png> <val_probs.npz> [...]
-        print(evaluation([Path(p) for p in sys.argv[5:]], Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4])))
+    elif what == "evaluation":  # evaluation <post.json> <gt_crops.pkl | none> <out.png> <val_probs.npz | glob> [...]
+        gt_arg = None if sys.argv[3].lower() == "none" else Path(sys.argv[3])
+        print(evaluation(sys.argv[5:], Path(sys.argv[2]), gt_arg, Path(sys.argv[4])))

@@ -27,6 +27,7 @@ import base64, io, os, pathlib, shutil, subprocess, sys, threading, zipfile, imp
 SRC = "/kaggle/working/src"
 PAYLOAD = "{payload}"
 COMMANDS = {commands!r}
+SEQUENTIAL = {sequential!r}  # True: run the commands one after another (CPU pipelines)
 
 os.makedirs(SRC, exist_ok=True)
 zipfile.ZipFile(io.BytesIO(base64.b64decode(PAYLOAD))).extractall(SRC)
@@ -43,10 +44,10 @@ def pump(k, proc):
             print(f"[{{k}}] {{line}}", end="", flush=True)
 
 
-procs, pumps = [], []
+procs, pumps, rcs = [], [], []
 for k, cmd in enumerate(COMMANDS):
     env = dict(os.environ, PYTHONPATH=SRC, PYTHONUNBUFFERED="1")
-    if len(COMMANDS) > 1:
+    if len(COMMANDS) > 1 and not SEQUENTIAL:
         env["CUDA_VISIBLE_DEVICES"] = str(k)
     p = subprocess.Popen([sys.executable] + cmd, env=env, cwd="/kaggle/working",
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -54,7 +55,11 @@ for k, cmd in enumerate(COMMANDS):
     t.start()
     procs.append(p)
     pumps.append(t)
-rcs = [p.wait() for p in procs]
+    if SEQUENTIAL:
+        rcs.append(p.wait())
+        t.join(timeout=60)
+if not SEQUENTIAL:
+    rcs = [p.wait() for p in procs]
 for t in pumps:
     t.join(timeout=60)
 print("return codes:", rcs, flush=True)
@@ -80,6 +85,7 @@ def main() -> None:
     ap.add_argument("--name", required=True)
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--gpu", action="store_true")
+    ap.add_argument("--sequential", action="store_true", help="run the :: separated commands one after another")
     ap.add_argument("--kernel-sources", nargs="*", default=[], help="other kernels whose output is mounted as input")
     ap.add_argument("--dataset-sources", nargs="*", default=[])
     ap.add_argument("cmd", nargs=argparse.REMAINDER)
@@ -95,7 +101,8 @@ def main() -> None:
     commands.append(cur)
 
     args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "run.py").write_text(TEMPLATE.format(payload=payload(), commands=commands), encoding="utf-8")
+    (args.out / "run.py").write_text(TEMPLATE.format(payload=payload(), commands=commands, sequential=args.sequential),
+                                     encoding="utf-8")
     meta = {
         "id": f"{args.user}/{args.name}",
         "title": args.name,

@@ -21,19 +21,23 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from cli_utils import expand, find_test_dir  # noqa: E402
+
 from filseg import submission  # noqa: E402
 from filseg.postprocess import PostConfig, instances_from_prob, upsample  # noqa: E402
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--probs", nargs="+", type=Path, required=True)
+    ap.add_argument("--probs", nargs="+", required=True, help="test_probs.npz files or glob patterns")
     ap.add_argument("--post", type=Path, required=True)
-    ap.add_argument("--test-dir", type=Path, required=True)
+    ap.add_argument("--test-dir", default=None, help="default: found under /kaggle/input")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
 
     cfg = PostConfig(**json.loads(args.post.read_text()))
+    args.probs = expand(args.probs)
+    args.test_dir = find_test_dir(args.test_dir)
     files = [np.load(p) for p in args.probs]  # lazy: arrays are read per key
     test_ids = sorted(p.stem for p in args.test_dir.glob("*.jp*g"))
     missing = [str(p) for p, z in zip(args.probs, files) if set(test_ids) - set(z.files)]

@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from analyze_oof import load_gt, load_probs  # noqa: E402
+from cli_utils import expand  # noqa: E402
 
 from filseg import components, data  # noqa: E402
 from filseg.postprocess import PostConfig  # noqa: E402
@@ -30,7 +31,7 @@ from filseg.postprocess import PostConfig  # noqa: E402
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--probs", nargs="+", type=Path, required=True)
+    ap.add_argument("--probs", nargs="+", required=True, help="files or glob patterns")
     ap.add_argument("--data", default=None)
     ap.add_argument("--gt-cache", type=Path, default=None)
     ap.add_argument("--out", type=Path, required=True)
@@ -46,7 +47,7 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
 
-    probs = load_probs(args.probs)
+    probs = load_probs(expand(args.probs))
     gt = load_gt(args, set(probs))
     folds = data.image_folds(sorted({e.split("-", 1)[1] for e in gt} | set(probs)), args.nfolds, args.seed)
     if len({folds[i] for i in probs}) < 2:  # a single CV fold: nest over pseudo-folds of its images
