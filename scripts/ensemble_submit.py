@@ -33,6 +33,7 @@ def main() -> None:
     ap.add_argument("--post", type=Path, required=True)
     ap.add_argument("--test-dir", default=None, help="default: found under /kaggle/input")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--limit", type=int, default=0, help="debug: only the first N test images")
     args = ap.parse_args()
 
     cfg = PostConfig(**json.loads(args.post.read_text()))
@@ -40,6 +41,8 @@ def main() -> None:
     args.test_dir = find_test_dir(args.test_dir)
     files = [np.load(p) for p in args.probs]  # lazy: arrays are read per key
     test_ids = sorted(p.stem for p in args.test_dir.glob("*.jp*g"))
+    if args.limit:
+        test_ids = test_ids[:args.limit]
     missing = [str(p) for p, z in zip(args.probs, files) if set(test_ids) - set(z.files)]
     if missing:
         raise SystemExit(f"test images missing in {missing}")

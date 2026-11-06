@@ -100,6 +100,45 @@ def prepare_arrays(data_dir: Path, groups: dict[str, list[data.Entry]], res: int
     return imgs, tgts, wmaps, stats
 
 
+CACHE_VERSION = 1
+
+
+def cached_arrays(cache_dir: Path | None, data_dir: Path, groups: dict[str, list[data.Entry]], res: int,
+                  workers: int, small_weight: float = 0.0, norm: str = "global", log=print):
+    """:func:`prepare_arrays` with an optional on-disk cache of uint8 ``.npy`` files.
+
+    Several folds (and concurrent processes on one machine) need identical arrays. The
+    first run writes them (each file atomically); later runs memory-map them read-only,
+    which skips the CPU preparation and lets concurrent processes share one page-cache copy.
+    """
+    if cache_dir is None:
+        return prepare_arrays(data_dir, groups, res, workers, small_weight, norm)
+    import hashlib
+
+    key = hashlib.sha1(json.dumps([CACHE_VERSION, res, norm, small_weight, list(groups)]).encode()).hexdigest()[:16]
+    d = Path(cache_dir) / f"arrays_{res}_{norm}_{key}"
+    names = ["imgs", "tgts", "stats"] + (["wmaps"] if small_weight > 0 else [])
+    if all((d / f"{n}.npy").exists() for n in names):
+        log(f"loading prepared arrays from {d}")
+        arr = {n: np.load(d / f"{n}.npy", mmap_mode="r") for n in names}
+        return arr["imgs"], arr["tgts"], arr.get("wmaps"), np.array(arr["stats"])
+    imgs, tgts, wmaps, stats = prepare_arrays(data_dir, groups, res, workers, small_weight, norm)
+    tmp = None
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        for n, a in (("imgs", imgs), ("tgts", tgts), ("wmaps", wmaps), ("stats", stats)):
+            if a is not None:
+                tmp = d / f"{n}.{os.getpid()}.tmp.npy"
+                np.save(tmp, a)
+                os.replace(tmp, d / f"{n}.npy")
+        log(f"prepared arrays cached in {d}")
+    except OSError as e:  # e.g. disk full: training continues without the cache
+        log(f"could not write the array cache ({e})")
+        if tmp is not None and tmp.exists():
+            tmp.unlink()
+    return imgs, tgts, wmaps, stats
+
+
 def _worker_init(_):
     import cv2
 
@@ -176,10 +215,15 @@ def find_data_dir(hint: str | None) -> Path:
 
 
 def write_submission(models, data_dir: Path, res: int, cfg: PostConfig, device, out_csv: Path,
-                     tta: int, batch: int, log=print, norm: str = "global") -> pd.DataFrame:
-    """Predict the test images, post-process, write the CSV and log per-image inference time."""
+                     tta: int, batch: int, log=print, norm: str = "global", limit: int = 0) -> pd.DataFrame:
+    """Predict the test images, post-process, write the CSV and log per-image inference time.
+
+    ``limit`` > 0 predicts only the first ``limit`` test images (debugging).
+    """
     test_dir = data_dir / "test" / "test_images"
     files = sorted(test_dir.glob("*.jp*g"))
+    if limit:
+        files = files[:limit]
     rows = []
     test_probs = {}  # uint8 probability maps at the network resolution, for re-post-processing later
     t_read = t_model = t_post = 0.0
@@ -240,6 +284,9 @@ def main(argv=None) -> None:
                     help="gamma of the small-filament BCE weighting (A_ref/A)^gamma (0 = off)")
     ap.add_argument("--seed", type=int, default=2026)
     ap.add_argument("--limit", type=int, default=0, help="debug: use only N images")
+    ap.add_argument("--limit-test", type=int, default=0, help="debug: predict only the first N test images")
+    ap.add_argument("--cache-dir", type=Path, default=None,
+                    help="cache prepared training arrays here (memory-mapped by later folds / processes)")
     args = ap.parse_args(argv)
 
     t_start = time.time()
@@ -266,7 +313,8 @@ def main(argv=None) -> None:
         groups = dict(list(groups.items())[:args.limit])
     folds = data.image_folds(list(groups), args.nfolds, args.seed)
     t0 = time.time()
-    imgs, tgts, wmaps, stats = prepare_arrays(data_dir, groups, args.res, args.workers, args.small_weight, args.norm)
+    imgs, tgts, wmaps, stats = cached_arrays(args.cache_dir, data_dir, groups, args.res, args.workers,
+                                             args.small_weight, args.norm, log)
     ids = list(groups)
     log(f"prepared {len(ids)} images at {args.res}px in {time.time() - t0:.0f}s")
 
@@ -417,7 +465,7 @@ def main(argv=None) -> None:
 
     if args.predict_test:
         write_submission([model], data_dir, args.res, cfg, device, args.out / "submission.csv",
-                         args.tta, args.infer_bs or args.bs, log, norm=args.norm)
+                         args.tta, args.infer_bs or args.bs, log, norm=args.norm, limit=args.limit_test)
     hours = (time.time() - t_start) / 3600
     done = {"hours": round(hours, 3), "epochs": args.epochs, "fold": args.fold, "res": args.res,
             "arch": args.arch, "encoder": args.encoder, "post": asdict(cfg)}

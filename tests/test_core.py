@@ -320,3 +320,29 @@ def test_upsample_uint8_and_load_probs(tmp_path):
     p = load_probs([tmp_path / "a.npz", tmp_path / "b.npz", tmp_path / "c.npz"])
     assert set(p) == {"img1", "img2", "img3"} and p["img1"].dtype == np.uint8
     assert p["img1"].shape == (8, 8) and int(p["img1"][0, 0]) == 150 and int(p["img3"][0, 0]) == 50
+
+
+def test_cached_arrays_roundtrip(tmp_path):
+    import cv2
+    from filseg.data import Entry
+    from filseg.train import cached_arrays
+    img_dir = tmp_path / "data" / "train" / "train_images"
+    img_dir.mkdir(parents=True)
+    yy, xx = np.mgrid[:2048, :2048]
+    groups = {}
+    for i in range(2):
+        img = np.where((yy - 1024) ** 2 + (xx - 1024) ** 2 < 950 ** 2, 120 + 10 * i, 0).astype(np.uint8)
+        cv2.imwrite(str(img_dir / f"img{i}.jpeg"), img)
+        poly = [500.0, 500.0, 700.0, 500.0, 700.0, 560.0, 500.0, 560.0, 500.0, 500.0]
+        groups[f"img{i}"] = [Entry(f"010101-img{i}", "010101", f"img{i}", f"img{i}.jpeg", [poly], [1])]
+    msgs = []
+    first = cached_arrays(tmp_path / "cache", tmp_path / "data", groups, 256, 0, 0.0, "disk", msgs.append)
+    second = cached_arrays(tmp_path / "cache", tmp_path / "data", groups, 256, 0, 0.0, "disk", msgs.append)
+    assert any("cached in" in m for m in msgs) and any("loading prepared arrays" in m for m in msgs)
+    assert isinstance(second[0], np.memmap) and second[2] is None
+    for a, b in zip(first, second):
+        assert (a is None and b is None) or np.array_equal(np.asarray(a), np.asarray(b))
+    assert first[1].max() == 255 and first[3].shape == (2, 2)
+    other = cached_arrays(tmp_path / "cache", tmp_path / "data", {"img0": groups["img0"]}, 256, 0, 0.0, "disk",
+                          msgs.append)
+    assert len(other[0]) == 1          # a different image list never reuses the cache
