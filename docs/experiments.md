@@ -25,4 +25,11 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   0.35-0.40, 19 in 0.40-0.45, then a cluster of ~110 teams at 0.50-0.60 that coincides with a
   public notebook resubmitting a pre-computed prediction file (not a model). A public honest
   10-model ensemble reports nested OOF 0.450 vs public 0.39 (same direction of gap), explained
-  there by sparser test labels.
+  there by sparser test labels.* E1 predicts 6.6 filaments per validation image and 6.1 per test image with the same rule, so the
+  model does not behave differently on the test images; the validation-to-public gap (also seen by
+  the public reference) is consistent with sparser test labels (training annotators draw 7.1
+  filaments per image on average). Ratio public / validation: 0.82 for both E0b and E1.
+* Nested post-processing selection on E1 (5 pseudo-folds of fold 0, `scripts/select_post.py`):
+  nested PQ 0.4167 (in-sample best 0.4250); chosen rule threshold 0.35, closing 4, area >= 300,
+  mean probability >= 0.8, peak >= 0.99 (`configs/post_c1_nested.json`). Optimising PQ under a
+  label rate r = 0.77 picks a similar rule (threshold 0.30, area >= 400, mean >= 0.8).
