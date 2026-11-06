@@ -36,6 +36,7 @@ def main() -> None:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--thresholds", type=float, nargs="+", default=[0.3, 0.35, 0.4, 0.45, 0.5])
     ap.add_argument("--close", type=int, nargs="+", default=[0, 4])
+    ap.add_argument("--merge", type=int, nargs="+", default=[0], help="fragment grouping distances (px)")
     ap.add_argument("--nfolds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=2026)
     ap.add_argument("--workers", type=int, default=None)
@@ -53,23 +54,25 @@ def main() -> None:
     print(f"{len(probs)} images in folds {sorted({folds[i] for i in probs})}, {len(gt)} GT entries", flush=True)
 
     sets = {}
-    for thr, close in itertools.product(args.thresholds, args.close):
-        cache = args.out / f"components_t{thr}_c{close}.pkl"
+    for thr, close, merge in itertools.product(args.thresholds, args.close, args.merge):
+        cache = args.out / (f"components_t{thr}_c{close}" + (f"_m{merge}" if merge else "") + ".pkl")
         if cache.exists():
             with open(cache, "rb") as f:
                 cs = pickle.load(f)
         else:
-            cs = components.build(probs, gt, PostConfig(threshold=thr, close_radius=close, min_area=0), args.workers)
+            cs = components.build(probs, gt, PostConfig(threshold=thr, close_radius=close, merge_distance=merge,
+                                                        min_area=0), args.workers)
             with open(cache.with_suffix(".tmp"), "wb") as f:
                 pickle.dump(cs, f, protocol=pickle.HIGHEST_PROTOCOL)
             cache.with_suffix(".tmp").replace(cache)
-        sets[(thr, close)] = cs
-        print(f"shape t={thr} close={close}: {len(cs.table)} candidates [{time.time() - t0:.0f}s]", flush=True)
+        sets[(thr, close, merge)] = cs
+        print(f"shape t={thr} close={close} merge={merge}: {len(cs.table)} candidates [{time.time() - t0:.0f}s]",
+              flush=True)
 
     for r in args.r:
         res = components.nested_select(sets, folds, r=r)
-        thr, close = res["final_shape"]
-        cfg = replace(PostConfig(threshold=thr, close_radius=close), **res["final_rule"])
+        thr, close, merge = res["final_shape"]
+        cfg = replace(PostConfig(threshold=thr, close_radius=close, merge_distance=merge), **res["final_rule"])
         print(f"--- objective: PQ with label rate r = {r}")
         for c in res["fold_choices"]:
             print(f"outer fold {c['fold']}: shape {c['shape']} rule {c['rule']} inner {c['inner']:.4f} "
