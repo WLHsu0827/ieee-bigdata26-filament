@@ -357,6 +357,7 @@ def main(argv=None) -> None:
                     fold=args.fold, epochs=args.epochs, ema=args.ema)
 
     cfg = default_cfg
+    val_res = None
     if args.post and args.post.exists():
         cfg = PostConfig(**json.loads(args.post.read_text()))
     if len(va_idx):
@@ -364,18 +365,25 @@ def main(argv=None) -> None:
         np.savez_compressed(args.out / "val_probs.npz",
                             **{k: np.round(v.astype(np.float32) * 255).astype(np.uint8) for k, v in probs.items()})
         if args.post and args.post.exists():
-            log(f"val (tta{args.tta}) with given post {asdict(cfg)} -> "
-                f"{score(probs, gt_val, cfg, workers=args.tune_workers or None)}")
+            val_res = score(probs, gt_val, cfg, workers=args.tune_workers or None)
+            log(f"val (tta{args.tta}) with given post {asdict(cfg)} -> {val_res}")
         else:
             log("tuning post-processing on hold-out fold")
-            cfg, best, _ = grid_search(probs, gt_val, default_cfg, log=log, workers=args.tune_workers or None)
-            log(f"best post {asdict(cfg)} -> {best}")
+            cfg, val_res, _ = grid_search(probs, gt_val, default_cfg, log=log, workers=args.tune_workers or None)
+            log(f"best post {asdict(cfg)} -> {val_res}")
     (args.out / "post.json").write_text(json.dumps(asdict(cfg), indent=1))
 
     if args.predict_test:
         write_submission([model], data_dir, args.res, cfg, device, args.out / "submission.csv",
                          args.tta, args.infer_bs or args.bs, log)
-    log(f"done in {(time.time() - t_start) / 3600:.2f} h")
+    hours = (time.time() - t_start) / 3600
+    done = {"hours": round(hours, 3), "epochs": args.epochs, "fold": args.fold, "res": args.res,
+            "arch": args.arch, "encoder": args.encoder, "post": asdict(cfg)}
+    if val_res is not None:
+        done["val"] = {"pq": val_res.pq, "sq": val_res.sq, "rq": val_res.rq,
+                       "tp": val_res.tp, "fp": val_res.fp, "fn": val_res.fn}
+    (args.out / "done.json").write_text(json.dumps(done, indent=1))  # completion marker
+    log(f"done in {hours:.2f} h")
 
 
 if __name__ == "__main__":

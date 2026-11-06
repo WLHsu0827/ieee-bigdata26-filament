@@ -1,26 +1,29 @@
-"""Generate ``notebooks/colab_train.ipynb``: a self-contained, resumable Colab
-(free T4) training notebook.
+"""Generate ``notebooks/colab_<run>.ipynb``: a self-contained, resumable Colab
+(free T4) training notebook that runs one or more training jobs in sequence.
 
 The notebook embeds the ``filseg`` package, downloads the competition data with
 the user's Kaggle API token (stored as a Colab secret, never in the notebook),
-trains with ``filseg.train``, and periodically uploads ``last.pt`` plus logs to
-a *private* Kaggle dataset so that a disconnected session can resume and the
+trains each job with ``filseg.train``, and periodically uploads the running
+job's checkpoint plus every finished job's outputs to a *private* Kaggle dataset
+(``<job>__<file>``), so that a disconnected session resumes where it stopped and
 results can be retrieved without manual downloads.
 
 Usage:
-    python kaggle/build_colab.py --run c1-r34-1024 --kaggle-user <user> -- --res 1024 --encoder resnet34 ...
+    python kaggle/build_colab.py --run c2 --kaggle-user <user> \
+        --job r34-f1 "--fold 1 --res 1024 --encoder resnet34 ..." --job r34-f2 "--fold 2 ..."
 """
 from __future__ import annotations
 
 import argparse
 import json
+import shlex
 from pathlib import Path
 
 from build_kernel import payload
 
 ROOT = Path(__file__).resolve().parents[1]
 
-INTRO = """# Solar filament segmentation -- Colab training run `{run}`
+INTRO = """# Solar filament segmentation -- Colab training run `{run}` (jobs listed in the first code cell)
 
 One-time setup (about 2 minutes):
 
@@ -40,7 +43,7 @@ private dataset automatically; nothing needs to be downloaded by hand.
 """
 
 CONFIG = """RUN = {run!r}
-TRAIN_ARGS = {args!r}
+JOBS = {jobs!r}  # (name, filseg.train arguments), run one after another
 SYNC_MINUTES = 20  # upload the checkpoint at most this often
 DEFAULT_KAGGLE_USER = {user!r}  # public Kaggle user name; override with the optional secret KAGGLE_USERNAME
 """
@@ -63,7 +66,7 @@ if not TOKEN:
     raise RuntimeError("KAGGLE_API_TOKEN is empty: add the Colab secret KAGGLE_API_TOKEN or paste the token at the prompt.")
 USER = _secret("KAGGLE_USERNAME") or DEFAULT_KAGGLE_USER
 SLUG = f"{USER}/fil-colab-{RUN}"
-WORK = Path("/content/work"); OUT = WORK / "out" / RUN; OUT.mkdir(parents=True, exist_ok=True)
+WORK = Path("/content/work"); OUT = WORK / "out" / RUN; OUT.mkdir(parents=True, exist_ok=True)  # one sub-folder per job
 
 def kaggle(*a, check=True):
     # the token is passed only to the kaggle CLI subprocess, never to os.environ or the training process
@@ -97,24 +100,35 @@ print("code unpacked to", SRC)
 """
 
 RESUME = r"""SYNC = WORK / "sync"
+FINAL_FILES = ["model.pt", "post.json", "log.txt", "val_probs.npz", "submission.csv", "timing.json", "done.json"]
+
 def dataset_exists():
     return kaggle("datasets", "status", SLUG, check=False).returncode == 0
-if not (OUT / "last.pt").exists() and dataset_exists():
+
+# after a disconnect: restore finished jobs and the checkpoint of the unfinished one
+if dataset_exists() and not any((OUT / name).exists() for name, _ in JOBS):
     tmp = WORK / "resume"; shutil.rmtree(tmp, ignore_errors=True)
-    r = kaggle("datasets", "download", SLUG, "-p", str(tmp), "--unzip", check=False)
-    for f in ["last.pt", "log.txt"]:
-        if (tmp / f).exists():
-            shutil.copy(tmp / f, OUT / f)
-    print("resume files:", sorted(p.name for p in OUT.iterdir()))
+    kaggle("datasets", "download", SLUG, "-p", str(tmp), "--unzip", check=False)
+    for name, _ in JOBS:
+        for f in tmp.glob(f"{name}__*"):
+            (OUT / name).mkdir(parents=True, exist_ok=True)
+            shutil.copy(f, OUT / name / f.name.split("__", 1)[1])
+for name, _ in JOBS:
+    d = OUT / name
+    state = "done" if (d / "done.json").exists() else ("resume" if (d / "last.pt").exists() else "new")
+    print(f"{name}: {state}")
 """
 
 TRAIN = r"""_lock = threading.Lock()
-def sync(message, files):
+def sync(message, with_checkpoint):
     with _lock:
         shutil.rmtree(SYNC, ignore_errors=True); SYNC.mkdir(parents=True)
-        for f in files:
-            if (OUT / f).exists():
-                shutil.copy(OUT / f, SYNC / f)
+        for name, _ in JOBS:
+            d = OUT / name
+            done = (d / "done.json").exists()
+            for f in FINAL_FILES + (["last.pt"] if with_checkpoint and not done else []):
+                if (d / f).exists():
+                    shutil.copy(d / f, SYNC / f"{name}__{f}")
         (SYNC / "dataset-metadata.json").write_text(json.dumps(
             {"title": f"fil-colab-{RUN}", "id": SLUG, "licenses": [{"name": "other"}]}))
         if dataset_exists():
@@ -127,22 +141,29 @@ stop = threading.Event()
 def periodic():
     last = None
     while not stop.wait(SYNC_MINUTES * 60):
-        p = OUT / "last.pt"
-        if p.exists() and p.stat().st_mtime != last:
-            last = p.stat().st_mtime
-            sync(f"checkpoint {time.strftime('%H:%M')}", ["last.pt", "log.txt"])
+        stamps = tuple((OUT / n / "last.pt").stat().st_mtime for n, _ in JOBS if (OUT / n / "last.pt").exists())
+        if stamps and stamps != last:
+            last = stamps
+            sync(f"checkpoint {time.strftime('%H:%M')}", with_checkpoint=True)
 threading.Thread(target=periodic, daemon=True).start()
 
 env = dict(os.environ, PYTHONPATH=str(SRC), PYTHONUNBUFFERED="1")
-cmd = [sys.executable, "-m", "filseg.train", "--data", str(DATA / "MAGFiLO_1.0_Kaggle_2026"), "--out", str(OUT), *TRAIN_ARGS]
-proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-for line in proc.stdout:
-    print(line, end="")
-rc = proc.wait(); stop.set()
-print("training exit code", rc)
-sync(f"final rc={rc}", ["model.pt", "post.json", "log.txt", "val_probs.npz", "submission.csv", "timing.json"])
+codes = {}
+for name, args in JOBS:
+    d = OUT / name
+    if (d / "done.json").exists():
+        print(f"===== {name}: already finished, skipping"); continue
+    print(f"===== {name}: {' '.join(args)}", flush=True)
+    cmd = [sys.executable, "-m", "filseg.train", "--data", str(DATA / "MAGFiLO_1.0_Kaggle_2026"), "--out", str(d), *args]
+    proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    for line in proc.stdout:
+        print(line, end="")
+    codes[name] = proc.wait()
+    print(f"===== {name}: exit code {codes[name]}", flush=True)
+    sync(f"{name} finished rc={codes[name]}", with_checkpoint=False)
+stop.set()
+print("all jobs finished:", codes)
 """
-
 
 def cell(kind: str, src: str) -> dict:
     c = {"cell_type": kind, "metadata": {}, "source": src.splitlines(keepends=True)}
@@ -153,27 +174,30 @@ def cell(kind: str, src: str) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run", required=True)
+    ap.add_argument("--run", required=True, help="run name; results go to the private dataset fil-colab-<run>")
     ap.add_argument("--kaggle-user", required=True, help="public Kaggle user name owning the private result dataset")
-    ap.add_argument("--out", type=Path, default=ROOT / "notebooks" / "colab_train.ipynb")
-    ap.add_argument("args", nargs=argparse.REMAINDER)
+    ap.add_argument("--job", nargs=2, action="append", metavar=("NAME", "ARGS"), required=True,
+                    help='one training job: name and the filseg.train arguments as one string (repeatable)')
+    ap.add_argument("--out", type=Path, default=None, help="default: notebooks/colab_<run>.ipynb")
     a = ap.parse_args()
-    train_args = a.args[1:] if a.args and a.args[0] == "--" else a.args
+    jobs = [(name, shlex.split(args)) for name, args in a.job]
+    out = a.out or ROOT / "notebooks" / f"colab_{a.run}.ipynb"
     nb = {
         "nbformat": 4, "nbformat_minor": 5,
         "metadata": {"accelerator": "GPU", "colab": {"provenance": [], "gpuType": "T4"},
                      "kernelspec": {"name": "python3", "display_name": "Python 3"},
                      "language_info": {"name": "python"}},
         "cells": [cell("markdown", INTRO.format(run=a.run)),
-                  cell("code", CONFIG.format(run=a.run, args=train_args, user=a.kaggle_user)),
+                  cell("code", CONFIG.format(run=a.run, jobs=jobs, user=a.kaggle_user)),
                   cell("code", SETUP), cell("code", DATA),
                   cell("code", CODE.format(payload=payload())),
                   cell("code", RESUME), cell("code", TRAIN)],
     }
-    a.out.parent.mkdir(parents=True, exist_ok=True)
-    a.out.write_text(json.dumps(nb, indent=1), encoding="utf-8", newline="\n")
-    print(f"wrote {a.out} ({a.out.stat().st_size // 1024} KB) for run {a.run}: {' '.join(train_args)}")
-
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(nb, indent=1), encoding="utf-8", newline="\n")
+    print(f"wrote {out} ({out.stat().st_size // 1024} KB), run {a.run}:")
+    for name, args in jobs:
+        print(f"  {name}: {' '.join(args)}")
 
 if __name__ == "__main__":
     main()
