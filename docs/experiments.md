@@ -32,4 +32,6 @@ scored separately. LB = public leaderboard (~50 % of the test images).
 * Nested post-processing selection on E1 (5 pseudo-folds of fold 0, `scripts/select_post.py`):
   nested PQ 0.4167 (in-sample best 0.4250); chosen rule threshold 0.35, closing 4, area >= 300,
   mean probability >= 0.8, peak >= 0.99 (`configs/post_c1_nested.json`). Optimising PQ under a
-  label rate r = 0.77 picks a similar rule (threshold 0.30, area >= 400, mean >= 0.8).
+  label rate r = 0.77 picks a similar rule (threshold 0.30, area >= 400, mean >= 0.8).* Fragment grouping (merge nearby components, 10 / 20 px) on E1: nested PQ 0.4175 vs 0.4167 without
+  (in-sample best 0.4268 with 10 px vs 0.4250) -- within noise; kept as an option for the final
+  selection on the full out-of-fold set.
