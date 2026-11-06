@@ -68,7 +68,8 @@ sys.exit(max(rcs))
 def payload() -> str:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in sorted((ROOT / "filseg").rglob("*.py")) + sorted((ROOT / "scripts").glob("*.py")):
+        for f in (sorted((ROOT / "filseg").rglob("*.py")) + sorted((ROOT / "scripts").glob("*.py"))
+                  + sorted((ROOT / "configs").glob("*.json"))):
             z.write(f, f.relative_to(ROOT).as_posix())
     return base64.b64encode(buf.getvalue()).decode("ascii")
 

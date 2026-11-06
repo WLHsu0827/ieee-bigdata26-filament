@@ -1,0 +1,10 @@
+{
+ "threshold": 0.35,
+ "close_radius": 4,
+ "fill_holes": true,
+ "min_area": 300,
+ "min_mean_prob": 0.8,
+ "min_max_prob": 0.99,
+ "merge_distance": 0,
+ "dilate_radius": 0
+}
