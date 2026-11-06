@@ -104,9 +104,9 @@ if RUN_VALIDATION:
     groups = data.group_by_image(data.load_entries(train_json))
     folds = data.image_folds(list(groups), manifest.get("nfolds", 5), manifest.get("seed", 2026))
     preds, gt = {}, {}
-    for (model, res), meta in zip(models, manifest["models"]):
+    for (model, res, norm), meta in zip(models, manifest["models"]):
         ids = [i for i in groups if folds[i] == meta["fold"]]
-        probs = infer.predict_full([(model, res)], [data.read_image(DATA_DIR / "train" / "train_images" / groups[i][0].file_name) for i in ids], device)
+        probs = infer.predict_full([(model, res, norm)], [data.read_image(DATA_DIR / "train" / "train_images" / groups[i][0].file_name) for i in ids], device)
         for i, p in zip(ids, probs):
             lab, _ = postprocess.instances_from_prob(p, cfg)
             preds[i] = postprocess.label_to_crops(lab)

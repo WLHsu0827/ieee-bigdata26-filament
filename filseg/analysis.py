@@ -65,3 +65,28 @@ def summary(gt: dict[str, list[Crop]], preds: dict[str, list[Crop]], overlap_df:
         "mean_overlap_iou": float(iou.mean()) if iou.size else 0.0,
         "mean_overlap_dice": float(dice.mean()) if dice.size else 0.0,
     }
+
+
+def _pq(t: pd.DataFrame) -> float:
+    den = t["tp"].sum() + 0.5 * t["fp"].sum() + 0.5 * t["fn"].sum()
+    return float(t["sum_iou"].sum() / den) if den else 0.0
+
+
+def aggregation_breakdown(overlap_df: pd.DataFrame) -> dict:
+    """PQ under different aggregations and annotator subsets (per-entry table of ``metrics.evaluate``).
+
+    ``pooled`` is the official definition; the per-entry / per-image means show how
+    sensitive the score is to the aggregation, ``by_n_annotators`` to the image mix.
+    """
+    t = overlap_df.copy()
+    den = t["tp"] + 0.5 * t["fp"] + 0.5 * t["fn"]
+    t["pq_entry"] = np.where(den > 0, t["sum_iou"] / den.where(den > 0, 1), np.nan)
+    n_ann = t.groupby("image_id")["entry_id"].transform("count")
+    per_image = t.groupby("image_id").apply(_pq, include_groups=False)
+    return {
+        "pooled": _pq(t),
+        "mean_per_entry": float(np.nanmean(t["pq_entry"])),
+        "mean_per_image": float(per_image.mean()),
+        "by_n_annotators": {int(k): round(_pq(g), 4) for k, g in t.groupby(n_ann)},
+        "n_entries_by_n_annotators": {int(k): int(len(g)) for k, g in t.groupby(n_ann)},
+    }

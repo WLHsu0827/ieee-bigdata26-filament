@@ -44,9 +44,28 @@ def load_checkpoint(path, device: torch.device | str = "cpu") -> tuple[torch.nn.
     return model.to(device).eval(), {k: v for k, v in st.items() if k != "model"}
 
 
-def to_tensor(img01: np.ndarray) -> torch.Tensor:
-    """(H, W) float image in [0, 1] -> normalised (1, H, W) tensor."""
-    return torch.from_numpy(((img01 - MEAN) / STD).astype(np.float32))[None]
+def disk_stats(img_u8: np.ndarray) -> tuple[float, float]:
+    """Mean and standard deviation of ``img / 255`` inside the solar disk (full-resolution image)."""
+    from .classical import disk_mask
+
+    v = img_u8[disk_mask(img_u8, erode=16)].astype(np.float32) / 255.0
+    if v.size < 1000:
+        v = img_u8.astype(np.float32).ravel() / 255.0
+    return float(v.mean()), max(float(v.std()), 1e-3)
+
+
+def image_stats(img_u8: np.ndarray, norm: str) -> tuple[float, float]:
+    """Normalisation statistics: fixed (``global``) or per image inside the disk (``disk``)."""
+    if norm == "disk":
+        return disk_stats(img_u8)
+    if norm == "global":
+        return MEAN, STD
+    raise ValueError(f"unknown normalisation {norm!r}")
+
+
+def to_tensor(img01: np.ndarray, stats: tuple[float, float] = (MEAN, STD)) -> torch.Tensor:
+    """(H, W) float image in [0, 1] -> normalised (1, H, W) tensor, ``(img - mean) / std``."""
+    return torch.from_numpy(((img01 - stats[0]) / stats[1]).astype(np.float32))[None]
 
 
 def resize_image(img: np.ndarray, res: int) -> np.ndarray:
@@ -73,15 +92,15 @@ def predict_batch(model: torch.nn.Module, x: torch.Tensor, tta: int = 4) -> torc
 @torch.no_grad()
 def predict_images(models: list[torch.nn.Module], images: list[np.ndarray], res: int,
                    device: torch.device, tta: int = 4, batch: int = 4,
-                   amp: bool = True) -> np.ndarray:
+                   amp: bool = True, norm: str = "global") -> np.ndarray:
     """uint8 (2048, 2048) images -> float16 probabilities at ``res`` (N, res, res).
 
-    Probabilities of several models are averaged.
+    Probabilities of several models (same resolution and normalisation) are averaged.
     """
     out = np.zeros((len(images), res, res), np.float16)
     use_amp = amp and device.type == "cuda"
     for s in range(0, len(images), batch):
-        xb = torch.stack([to_tensor(resize_image(im, res).astype(np.float32) / 255.0)
+        xb = torch.stack([to_tensor(resize_image(im, res).astype(np.float32) / 255.0, image_stats(im, norm))
                           for im in images[s:s + batch]]).to(device)
         acc = None
         with torch.autocast(device_type=device.type, enabled=use_amp):

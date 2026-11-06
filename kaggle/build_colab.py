@@ -100,7 +100,8 @@ print("code unpacked to", SRC)
 """
 
 RESUME = r"""SYNC = WORK / "sync"
-FINAL_FILES = ["model.pt", "post.json", "log.txt", "val_probs.npz", "submission.csv", "timing.json", "done.json"]
+FINAL_FILES = ["model.pt", "post.json", "log.txt", "val_probs.npz", "test_probs.npz", "submission.csv",
+               "timing.json", "done.json"]
 
 def dataset_exists():
     return kaggle("datasets", "status", SLUG, check=False).returncode == 0

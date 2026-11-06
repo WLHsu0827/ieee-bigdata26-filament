@@ -24,23 +24,24 @@ from .model import load_checkpoint, predict_images, upsample
 from .postprocess import PostConfig, instances_from_prob
 
 
-def load_models(paths: list[Path], device: torch.device) -> list[tuple[torch.nn.Module, int]]:
+def load_models(paths: list[Path], device: torch.device) -> list[tuple[torch.nn.Module, int, str]]:
+    """Checkpoints -> ``(network, input resolution, normalisation)`` tuples."""
     models = []
     for p in paths:
         m, meta = load_checkpoint(p, device)
-        models.append((m, int(meta["res"])))
+        models.append((m, int(meta["res"]), meta.get("norm", "global")))
     return models
 
 
-def predict_full(models: list[tuple[torch.nn.Module, int]], images: list[np.ndarray],
+def predict_full(models: list[tuple[torch.nn.Module, int, str]], images: list[np.ndarray],
                  device: torch.device, tta: int = 4, batch: int = 4) -> list[np.ndarray]:
-    """Average full-resolution probability maps of all models (grouped by resolution)."""
-    by_res: dict[int, list[torch.nn.Module]] = {}
-    for m, r in models:
-        by_res.setdefault(r, []).append(m)
+    """Average full-resolution probability maps of all models (grouped by resolution and normalisation)."""
+    groups: dict[tuple[int, str], list[torch.nn.Module]] = {}
+    for m, r, norm in models:
+        groups.setdefault((r, norm), []).append(m)
     acc = [np.zeros(im.shape, np.float32) for im in images]
-    for r, ms in by_res.items():
-        probs = predict_images(ms, images, r, device, tta=tta, batch=batch)
+    for (r, norm), ms in groups.items():
+        probs = predict_images(ms, images, r, device, tta=tta, batch=batch, norm=norm)
         for k, p in enumerate(probs):
             acc[k] += upsample(p) * len(ms)
     return [a / len(models) for a in acc]

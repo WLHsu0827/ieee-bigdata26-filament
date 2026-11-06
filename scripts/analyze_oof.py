@@ -78,7 +78,8 @@ def main() -> None:
     gt = load_gt(args, set(probs))
     print(f"{len(probs)} images, {len(gt)} GT entries, {sum(map(len, gt.values()))} GT filaments", flush=True)
 
-    rules = list(itertools.product([0, 100, 200, 300, 500, 800, 1200], [0.0, 0.5, 0.6, 0.7, 0.8, 0.9],
+    rules = list(itertools.product([0, 100, 200, 300, 400, 500, 650, 800, 1000, 1200, 1600, 2000],
+                                   [0.0, 0.5, 0.6, 0.7, 0.8, 0.9],
                                    [0.0, 0.4, 0.5, 0.6]))
     rows, best = [], None
     for thr, close, merge in itertools.product(args.thresholds, args.close, args.merge):

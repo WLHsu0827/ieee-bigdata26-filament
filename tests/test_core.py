@@ -238,3 +238,25 @@ def test_ema_warmup_tracks_model_early():
         ema.update_parameters(m)
     # plain EMA(0.999) would still be ~0.2; with warm-up the average follows the trajectory
     assert ema.module.weight.item() > 8.0
+    # networks with BatchNorm have integer buffers (num_batches_tracked) that must not break the update
+    net = torch.nn.Sequential(torch.nn.Conv2d(1, 2, 3), torch.nn.BatchNorm2d(2))
+    ema2 = AveragedModel(net, multi_avg_fn=ema_with_warmup(0.999), use_buffers=True)
+    for _ in range(3):
+        net(torch.randn(2, 1, 8, 8))
+        ema2.update_parameters(net)
+    assert int(ema2.module[1].num_batches_tracked) == 3
+
+
+def test_disk_normalisation_and_prediction_path():
+    import torch
+    from filseg.model import image_stats, predict_images
+    yy, xx = np.mgrid[:2048, :2048]
+    img = np.zeros((2048, 2048), np.uint8)
+    disk = (yy - 1024) ** 2 + (xx - 1024) ** 2 < 950 ** 2
+    img[disk] = 120
+    img[disk & (xx < 1024)] = 140
+    m, s = image_stats(img, "disk")
+    assert 120 / 255 < m < 140 / 255 and s > 0.01
+    assert image_stats(img, "global") == (0.45, 0.225)
+    p = predict_images([torch.nn.Identity()], [img], 64, torch.device("cpu"), tta=2, norm="disk")
+    assert p.shape == (1, 64, 64) and p.dtype == np.float16

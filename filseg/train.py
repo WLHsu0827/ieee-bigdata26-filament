@@ -11,6 +11,7 @@ Training on all images (no validation) with a fixed post-processing config:
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import math
 import os
@@ -27,7 +28,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from . import augment, data, submission
 from .metrics import Crop
-from .model import build_model, predict_images, save_checkpoint, to_tensor, upsample
+from .model import MEAN, STD, build_model, predict_images, save_checkpoint, to_tensor, upsample
 from .postprocess import PostConfig, instances_from_prob
 from .tune import grid_search, score
 
@@ -63,38 +64,40 @@ def small_instance_weights(entries: list[data.Entry], gamma: float, margin: int 
 
 
 def _prepare_one(args):
-    path, entries, res, gamma = args
-    from .model import resize_image
+    path, entries, res, gamma, norm = args
+    from .model import image_stats, resize_image
     img = data.read_image(path)
     tgt = np.round(data.soft_target(entries, size=res) * 255).astype(np.uint8)
     wmap = None
     if gamma > 0:
         w = resize_image(small_instance_weights(entries, gamma), res)
         wmap = np.round((w - 1.0) / (SMALL_MAX_WEIGHT - 1.0) * 255).astype(np.uint8)
-    return resize_image(img, res), tgt, wmap
+    return resize_image(img, res), tgt, wmap, image_stats(img, norm)
 
 
 def prepare_arrays(data_dir: Path, groups: dict[str, list[data.Entry]], res: int, workers: int,
-                   small_weight: float = 0.0):
-    jobs = [(data_dir / "train" / "train_images" / es[0].file_name, es, res, small_weight)
+                   small_weight: float = 0.0, norm: str = "global"):
+    """Images and soft targets at ``res`` (uint8), optional weight maps, per-image normalisation stats."""
+    jobs = [(data_dir / "train" / "train_images" / es[0].file_name, es, res, small_weight, norm)
             for es in groups.values()]
     n = len(jobs)
     # preallocate and fill in place: peak memory stays ~1x the arrays even at 2048 px
     imgs = np.empty((n, res, res), np.uint8)
     tgts = np.empty((n, res, res), np.uint8)
     wmaps = np.empty((n, res, res), np.uint8) if small_weight > 0 else None
+    stats = np.empty((n, 2), np.float32)
     pool = Pool(workers) if workers > 0 else None
     try:
         it = pool.imap(_prepare_one, jobs, chunksize=2) if pool else map(_prepare_one, jobs)
-        for k, (img, tgt, wmap) in enumerate(it):
-            imgs[k], tgts[k] = img, tgt
+        for k, (img, tgt, wmap, st) in enumerate(it):
+            imgs[k], tgts[k], stats[k] = img, tgt, st
             if wmaps is not None:
                 wmaps[k] = wmap
     finally:
         if pool:
             pool.close()
             pool.join()
-    return imgs, tgts, wmaps
+    return imgs, tgts, wmaps, stats
 
 
 def _worker_init(_):
@@ -104,16 +107,21 @@ def _worker_init(_):
 
 
 class TrainSet(Dataset):
+    """Training samples of the images ``idx`` (indices into the full arrays, so nothing is copied)."""
+
     def __init__(self, imgs: np.ndarray, tgts: np.ndarray, crop: int, epoch_mult: int = 1,
-                 wmaps: np.ndarray | None = None):
+                 wmaps: np.ndarray | None = None, stats: np.ndarray | None = None,
+                 idx: np.ndarray | None = None):
         self.imgs, self.tgts, self.crop, self.mult, self.wmaps = imgs, tgts, crop, epoch_mult, wmaps
+        self.stats = stats
+        self.idx = np.arange(len(imgs)) if idx is None else np.asarray(idx)
 
     def __len__(self):
-        return len(self.imgs) * self.mult
+        return len(self.idx) * self.mult
 
     def __getitem__(self, i):
         rng = np.random.default_rng(torch.randint(0, 2**31, (1,)).item())
-        i = i % len(self.imgs)
+        i = int(self.idx[i % len(self.idx)])
         arrays = [self.imgs[i], self.tgts[i]] + ([self.wmaps[i]] if self.wmaps is not None else [])
         if self.crop < arrays[0].shape[0]:
             arrays = augment.crop_geometric(arrays, self.crop, rng, focus=1)
@@ -121,7 +129,8 @@ class TrainSet(Dataset):
             arrays = augment.geometric(arrays, rng)
         img = augment.photometric(arrays[0].astype(np.float32) / 255.0, rng)
         tgt = np.stack([a.astype(np.float32) / 255.0 for a in arrays[1:]])
-        return to_tensor(img), torch.from_numpy(tgt)
+        st = tuple(self.stats[i]) if self.stats is not None else (MEAN, STD)
+        return to_tensor(img, st), torch.from_numpy(tgt)
 
 
 def ema_with_warmup(decay: float):
@@ -134,6 +143,9 @@ def ema_with_warmup(decay: float):
     @torch.no_grad()
     def fn(ema_params, cur_params, num_averaged):
         n = float(num_averaged)
+        if not (torch.is_floating_point(ema_params[0]) or torch.is_complex(ema_params[0])):
+            torch._foreach_copy_(ema_params, cur_params)  # integer buffers, e.g. BatchNorm num_batches_tracked
+            return
         torch._foreach_lerp_(ema_params, cur_params, 1.0 - min(decay, (1.0 + n) / (10.0 + n)))
 
     return fn
@@ -164,20 +176,22 @@ def find_data_dir(hint: str | None) -> Path:
 
 
 def write_submission(models, data_dir: Path, res: int, cfg: PostConfig, device, out_csv: Path,
-                     tta: int, batch: int, log=print) -> pd.DataFrame:
+                     tta: int, batch: int, log=print, norm: str = "global") -> pd.DataFrame:
     """Predict the test images, post-process, write the CSV and log per-image inference time."""
     test_dir = data_dir / "test" / "test_images"
     files = sorted(test_dir.glob("*.jp*g"))
     rows = []
+    test_probs = {}  # uint8 probability maps at the network resolution, for re-post-processing later
     t_read = t_model = t_post = 0.0
     for s in range(0, len(files), 16):
         chunk = files[s:s + 16]
         t0 = time.time()
         imgs = [data.read_image(f) for f in chunk]
         t1 = time.time()
-        probs = predict_images(models, imgs, res, device, tta, batch)
+        probs = predict_images(models, imgs, res, device, tta, batch, norm=norm)
         t2 = time.time()
         for f, p in zip(chunk, probs):
+            test_probs[f.stem] = np.round(p.astype(np.float32) * 255).astype(np.uint8)
             lab, _ = instances_from_prob(upsample(p), cfg)
             rows += submission.rows_from_label(f.stem, lab)
         t_read, t_model, t_post = t_read + t1 - t0, t_model + t2 - t1, t_post + time.time() - t2
@@ -186,6 +200,7 @@ def write_submission(models, data_dir: Path, res: int, cfg: PostConfig, device, 
     timing = {"device": str(device), "tta": tta, "res": res, "n_models": len(models), "images": len(files),
               "read_s_per_image": t_read / n, "model_s_per_image": t_model / n, "post_s_per_image": t_post / n}
     (out_csv.parent / "timing.json").write_text(json.dumps(timing, indent=1))
+    np.savez_compressed(out_csv.parent / "test_probs.npz", **test_probs)
     log(f"submission: {len(files)} images, {len(df)} filaments -> {out_csv}; check: {report}")
     log(f"inference time per image: read {t_read / n:.3f}s + model {t_model / n:.3f}s + post/encode {t_post / n:.3f}s"
         f" ({device}, {len(models)} model(s), tta={tta}, res={res})")
@@ -202,6 +217,8 @@ def main(argv=None) -> None:
     ap.add_argument("--epoch-mult", type=int, default=1, help="samples per image per epoch (useful with --crop)")
     ap.add_argument("--arch", default="Unet")
     ap.add_argument("--encoder", default="resnet34")
+    ap.add_argument("--norm", default="global", choices=["global", "disk"],
+                    help="input normalisation: fixed constants or per-image statistics inside the solar disk")
     ap.add_argument("--weights", default="imagenet", help="encoder pre-training (\"none\" = random init)")
     ap.add_argument("--epochs", type=int, default=25)
     ap.add_argument("--bs", type=int, default=8)
@@ -248,7 +265,7 @@ def main(argv=None) -> None:
         groups = dict(list(groups.items())[:args.limit])
     folds = data.image_folds(list(groups), args.nfolds, args.seed)
     t0 = time.time()
-    imgs, tgts, wmaps = prepare_arrays(data_dir, groups, args.res, args.workers, args.small_weight)
+    imgs, tgts, wmaps, stats = prepare_arrays(data_dir, groups, args.res, args.workers, args.small_weight, args.norm)
     ids = list(groups)
     log(f"prepared {len(ids)} images at {args.res}px in {time.time() - t0:.0f}s")
 
@@ -264,8 +281,8 @@ def main(argv=None) -> None:
     model = build_model(args.arch, args.encoder, None if args.weights == "none" else args.weights).to(device)
     if device.type == "cuda":
         model = model.to(memory_format=torch.channels_last)
-    ds = TrainSet(imgs[tr_idx], tgts[tr_idx], args.crop or args.res, args.epoch_mult,
-                  None if wmaps is None else wmaps[tr_idx])
+    ds = TrainSet(imgs, tgts, args.crop or args.res, args.epoch_mult, wmaps, stats, idx=tr_idx)
+    del imgs, tgts, wmaps  # only the dataset keeps the arrays; they are released after training
     dl = DataLoader(ds, batch_size=args.bs, shuffle=True, drop_last=True, num_workers=args.workers,
                     pin_memory=device.type == "cuda", persistent_workers=args.workers > 0,
                     worker_init_fn=_worker_init)
@@ -299,7 +316,7 @@ def main(argv=None) -> None:
         if val_imgs[0] is None:
             val_imgs = [data.read_image(data_dir / "train" / "train_images" / groups[ids[i]][0].file_name)
                         for i in va_idx]
-        p = predict_images(models, val_imgs, args.res, device, tta=tta, batch=args.infer_bs or args.bs)
+        p = predict_images(models, val_imgs, args.res, device, tta=tta, batch=args.infer_bs or args.bs, norm=args.norm)
         return {ids[i]: p[k] for k, i in enumerate(va_idx)}
 
     default_cfg = PostConfig(threshold=0.5, min_area=150)
@@ -353,8 +370,10 @@ def main(argv=None) -> None:
     if ema is not None:
         model = ema.module
     model.eval()
+    del dl, ds  # release the training arrays (and loader workers) before the final evaluation
+    gc.collect()
     save_checkpoint(model, args.out / "model.pt", arch=args.arch, encoder=args.encoder, res=args.res,
-                    fold=args.fold, epochs=args.epochs, ema=args.ema)
+                    norm=args.norm, fold=args.fold, epochs=args.epochs, ema=args.ema)
 
     cfg = default_cfg
     val_res = None
@@ -375,7 +394,7 @@ def main(argv=None) -> None:
 
     if args.predict_test:
         write_submission([model], data_dir, args.res, cfg, device, args.out / "submission.csv",
-                         args.tta, args.infer_bs or args.bs, log)
+                         args.tta, args.infer_bs or args.bs, log, norm=args.norm)
     hours = (time.time() - t_start) / 3600
     done = {"hours": round(hours, 3), "epochs": args.epochs, "fold": args.fold, "res": args.res,
             "arch": args.arch, "encoder": args.encoder, "post": asdict(cfg)}
