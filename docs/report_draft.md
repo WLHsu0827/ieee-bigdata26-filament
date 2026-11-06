@@ -1,65 +1,114 @@
-# Technical report draft (to be transferred to the official Overleaf template)
+# Technical report draft (to be transferred to the official Overleaf template, 4 pages)
 
-Working title: *Consensus-trained U-Nets with PQ-aware instance selection for solar
-filament segmentation*
+Working title: **Consensus-trained full-resolution U-Nets with PQ-aware instance
+selection for solar filament segmentation**
+
+Numbers marked `[TBD]` are filled in from `docs/experiments.md` when the final
+cross-validation runs are complete.
+
+## Abstract
+
+We segment individual solar filaments in GONG H-alpha full-disk images
+(MAGFiLO). An analysis of the multi-annotator training images shows that two
+experts agree at a Panoptic Quality (PQ) of only 0.34, and that a two-person
+consensus does not predict a third annotator better. We therefore (i) train
+U-Nets at the native 2048 px resolution on the soft consensus of all
+annotators, (ii) recover instances as connected components, which is lossless
+for this data set because annotated filaments practically never touch, and
+(iii) select instances with a rule derived from an exact per-component
+decomposition of PQ and chosen by nested cross-validation. An ensemble of
+ResNet34 and EfficientNetV2-S U-Nets reaches an out-of-fold PQ of `[TBD]`
+(human agreement 0.34) at `[TBD]` s per image on one T4 GPU.
 
 ## 1. Data and label analysis
 
-* 707 training observations (GONG H-alpha, 2048 x 2048, 6 sites, 2011-2022),
-  1,154 annotator sets ("entries"), 8,199 filament polygons; 180 test observations.
-  411 images have one annotator, 145 two and 151 three.
-* Filament areas span 9 to 37,739 px (median 1,228 px, 10th percentile 409 px).
+* 707 training observations (6 GONG sites, 2011-2022), 1,154 annotator sets
+  ("entries"), 8,199 filament polygons; 180 test observations. 411 images have
+  one annotator, 145 two and 151 three. Filament areas range from 9 to 37,739 px
+  (median 1,228 px, 10th percentile 409 px).
 * Instances practically never touch: the 8,199 polygons form 8,219 connected
   components of their per-entry unions (10 of 1,154 entries contain touching
   filaments). Instance segmentation therefore reduces to semantic segmentation
   followed by connected components.
-* **Annotator agreement (Panoptic Quality, official definition)** on the 296
-  multi-annotator training images (`scripts/annotator_agreement.py`,
-  `docs/annotator_agreement.json`):
+* **Annotator agreement** (official PQ; 296 multi-annotator images;
+  `scripts/annotator_agreement.py`):
 
-  | prediction scored against annotator *e* | PQ | SQ | RQ |
+  | "prediction" scored against annotator *e* | PQ | SQ | RQ |
   |---|---|---|---|
   | another single annotator (all ordered pairs) | 0.340 | 0.634 | 0.536 |
   | union of the two other annotators (3-annotator images) | 0.332 | 0.635 | 0.524 |
   | intersection of the two other annotators | 0.314 | 0.637 | 0.492 |
   | consensus of all annotators *including e*, fraction > 0.45 (oracle) | 0.648 | 0.804 | 0.806 |
 
-  Human agreement is low (PQ 0.34) and a two-person consensus does not predict a
-  third annotator better than one person does: annotator style (tight vs. loose
-  outlines, inclusion of faint filaments, splitting of filament chains) dominates
-  the metric. This matches the organisers' statement that PQ > 0.35 is valuable.
+  Annotator style (tight vs. loose outlines, inclusion of faint filaments,
+  splitting of filament chains) dominates the metric.
 
-## 2. Metric and its consequences
+## 2. The metric and what it rewards
 
-* PQ = sum of IoU over matched pairs / (TP + FP/2 + FN/2); a pair matches if IoU > 0.5;
-  every annotator entry is scored separately against the same predictions and
-  the counts are pooled over the data set. Our implementation (`filseg/metrics.py`)
-  reproduces the organisers' self-evaluation notebook exactly (difference 0.0 on
-  a test set of perturbed masks) and is ~6x faster (bounding-box crops).
-* **Decomposition.** For disjoint predicted instances, component *c* contributes
-  v_c = sum over entries e of IoU_e(c)·[IoU_e(c) > 0.5] to the numerator and
-  |E(c)|/2 to the denominator (it is either a TP or an FP for each entry). Hence
-  PQ(K) = sum_{c in K} v_c / (0.5 sum_{c in K} |E(c)| + 0.5 G), and keeping a
-  candidate improves PQ iff its average matched IoU per entry exceeds PQ/2.
-  With PQ around 0.4 a candidate is worth keeping when it has roughly a 30 %
-  chance of matching an annotator: the metric rewards recall more than a
-  pixel-level F1 would suggest. `filseg/components.py` uses this identity to
-  evaluate any selection rule exactly and instantly (unit-tested against the
-  official computation).
+* PQ = sum of IoU over matched pairs / (TP + FP/2 + FN/2); a pair matches if
+  IoU > 0.5; every annotator entry is scored separately against the same
+  predictions, and counts are pooled over the data set. Our implementation
+  (`filseg/metrics.py`) reproduces the organisers' self-evaluation notebook
+  exactly and is ~6x faster (bounding-box crops).
+* **Per-component decomposition.** For disjoint predicted instances, component
+  *c* adds v_c = sum_e IoU_e(c)·[IoU_e(c) > 0.5] to the numerator and |E(c)|/2
+  to the denominator (it is a TP or an FP for each of the image's |E(c)|
+  entries), so PQ(K) = sum_{c in K} v_c / (0.5 sum_{c in K} |E(c)| + 0.5 G),
+  with G the number of GT filaments. Keeping a candidate improves PQ iff its
+  average matched IoU per entry exceeds PQ/2: at PQ around 0.4 a candidate is
+  worth keeping when it has roughly a 30 % chance of matching an annotator.
+  `filseg/components.py` uses the identity to score any selection rule exactly
+  and instantly, which makes nested cross-validation of the post-processing
+  cheap (unit-tested against the official computation).
+* Error profile of a 1024 px model (fold 0): GT filaments below 300 px are
+  almost never matched (1 %), 300-600 px in 33 %, larger ones in 64-75 %;
+  23 % of GT filaments are not touched by any prediction and ~18 % are touched
+  but reach IoU <= 0.5. Boundary precision therefore matters, which motivates
+  native-resolution prediction.
 
-## 3. Method (in progress)
+## 3. Method
 
-* Input: single grey channel, full disk resized to the network resolution.
-* Target: soft consensus = fraction of the image's annotators covering each pixel.
-* Network: U-Net (segmentation-models-pytorch) with ImageNet-pretrained encoder;
-  loss BCE + soft Dice; AdamW, cosine schedule with warm-up, EMA of weights.
-* Augmentation: flips, arbitrary rotation, scale 0.9-1.1, gamma / contrast /
-  blur / noise; crop-first sampling around filaments for 2048 px training.
-* Post-processing: threshold, optional closing, hole filling, connected
-  components, hysteresis-style selection (minimum area, peak and mean
-  probability), optional grouping of nearby fragments; tuned for PQ on
-  out-of-fold predictions.
+* **Input.** One grey channel; each image is normalised by the mean and
+  standard deviation of its pixels inside the solar disk (largest bright
+  component, eroded), which removes exposure differences between sites.
+* **Target.** Soft consensus: the fraction of an image's annotators that cover
+  each pixel (polygons rasterised with pycocotools at full resolution).
+* **Network.** U-Net (segmentation-models-pytorch) with ImageNet-pretrained
+  ResNet34 or EfficientNetV2-S (`tf_efficientnetv2_s`, timm) encoders.
+* **Training.** 768 px crops of the 2048 px image, 70 % centred on a filament
+  pixel; a 1.6x larger window is rotated (any angle), scaled (0.9-1.1),
+  flipped and centre-cropped, followed by gamma / contrast / blur / noise
+  jitter. Loss BCE + soft Dice; AdamW (lr 3e-4, weight decay 1e-4), linear
+  warm-up and cosine decay, mixed precision, 30 epochs of 4 crops per image,
+  EMA of the weights (decay 0.999 with warm-up). 5-fold cross-validation
+  grouped by image (all annotators of an image in one fold).
+* **Inference.** Full 2048 px image, flip TTA (x4), average of the fold models
+  of both encoders.
+* **Instances.** Threshold the probability map, closing (radius 4 px), hole
+  filling, 8-connected components.
+* **Selection.** Keep a component if its area, mean and peak probability
+  exceed thresholds chosen by nested CV (outer folds = CV folds; the inner
+  choice maximises pooled PQ on the other four folds' out-of-fold maps).
 
-## 4. Experiments (in progress)
+## 4. Experiments
 
-See `docs/experiments.md`.
+| model | resolution | fold-0 PQ | out-of-fold PQ (nested) | public LB |
+|---|---|---|---|---|
+| classical darkness threshold | 2048 | 0.092 | - | 0.07 |
+| U-Net ResNet34 | 512 (full disk) | 0.365 | - | 0.30 |
+| U-Net ResNet34 | 1024 (full disk) | 0.416 (nested over 5 sub-folds: 0.417) | - | 0.34 |
+| U-Net ResNet34, disk norm | 2048 (crops) | [TBD] | [TBD] | [TBD] |
+| U-Net EfficientNetV2-S, disk norm | 2048 (crops) | [TBD] | [TBD] | [TBD] |
+| ensemble 2 x 5 folds | 2048 | - | [TBD] | [TBD] |
+
+* Public LB vs validation: the model predicts as many filaments per test image
+  as per validation image (6.1 vs 6.6), yet the public score is ~0.82 of the
+  validation score for every model. This is consistent with sparser labels on
+  the test images (a public reference ensemble shows the same ratio, ~0.87);
+  we report both the official out-of-fold PQ and the expected PQ when each
+  label is kept with probability r = 0.77 [discussion].
+* Efficiency: [TBD] s per image (network) + [TBD] s (post-processing) on one T4.
+
+## 5. Conclusion
+
+[TBD]
