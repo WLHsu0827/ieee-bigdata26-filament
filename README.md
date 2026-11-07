@@ -30,9 +30,13 @@ IoU exceeds 0.5), computed against every annotator's set of polygons separately.
    probability map, with hole filling.
 5. **PQ-aware selection.** For disjoint instances PQ decomposes over
    components: keeping a candidate improves PQ iff its expected matched IoU per
-   annotator exceeds PQ / 2 (`filseg/components.py`). Selection rules (minimum
-   area, peak and mean probability) are chosen by nested cross-validation on
-   out-of-fold predictions (`scripts/select_post.py`).
+   annotator exceeds PQ / 2 (`filseg/components.py`). The detection shape
+   (threshold, closing, outline level) is chosen by nested cross-validation on
+   out-of-fold predictions (`scripts/select_post.py`), and a small learned
+   filter (gradient-boosted trees on per-component features, exported to JSON so
+   inference needs only numpy; `filseg/scorer.py`, `scripts/fit_scorer.py`)
+   decides which candidates to keep. Kept instances are redrawn where the
+   probability exceeds 0.5.
 
 Experiments and numbers: `docs/experiments.md`. Report draft: `docs/report_draft.md`.
 
@@ -48,6 +52,14 @@ one-to-many / many-to-one statistics.
 pip install -r requirements.txt
 jupyter nbconvert --to notebook --execute notebooks/pipeline.ipynb   # or open and Run All
 ```
+
+Two profiles (variable `PROFILE` in the notebook, or `FILSEG_PROFILE`), measured
+end to end on one T4 GPU for the 180 test images (`scripts/run_notebook.py`):
+
+| profile | networks | out-of-fold PQ (nested CV) | time per image |
+|---|---|---|---|
+| `full` (submission) | 5 x ResNet34 + 5 x EfficientNetV2-S U-Nets | 0.447 | 8.5 s |
+| `fast` | 5 x EfficientNetV2-S U-Nets | 0.444 | 5.3 s |
 
 ## Training from scratch
 
