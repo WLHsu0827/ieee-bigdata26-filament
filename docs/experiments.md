@@ -40,4 +40,10 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   class (34 % of training filaments, smaller: median 868 px vs ~1,500 px): E1 0.367 vs 0.34,
   E0b 0.311 vs 0.30 -- fits worse. Both favour stricter selection (fewer, larger instances) than
   the validation optimum; we do not tune on the public LB, but one of the two final submissions
-  can use a rule chosen under hypothesis (a).
+  can use a rule chosen under hypothesis (a).* Outline threshold (detect at t, redraw kept instances at p > t_mask; 11-07): growing hurts
+  (t_mask 0.15-0.30: 0.403-0.423 vs 0.425), shrinking to 0.45-0.50 helps slightly (0.4269-0.4275,
+  better in 3/5 pseudo-folds). Nested selection with outlines as an option: plain-PQ objective
+  0.4167 (unchanged: more freedom = more selection noise on 142 images); the r = 0.77 objective
+  picks the same rule in 4/5 outer folds -- threshold 0.30, closing 4, area >= 400, mean >= 0.8,
+  outline 0.50 -- with nested official PQ 0.4247, the best honest estimate for E1 so far. The final
+  selection is repeated on all 707 out-of-fold images of the K1 ensemble.
