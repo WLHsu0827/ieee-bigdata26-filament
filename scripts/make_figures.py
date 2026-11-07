@@ -144,8 +144,9 @@ def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
     iou, dice = analysis.overlap_distributions(odf)
     gdeg, pdeg = matching_degrees(odf)
     by_size = analysis.by_size(analysis.gt_table(gt, odf))
+    tax = analysis.error_taxonomy(gt, preds, odf)
 
-    fig, ax = plt.subplots(1, 4, figsize=(22, 4.5))
+    fig, ax = plt.subplots(1, 5, figsize=(27, 4.5))
     for a, vals, name in ((ax[0], iou, "IoU"), (ax[1], dice, "Dice")):
         a.hist(vals, bins=np.linspace(0, 1, 51), weights=np.ones(len(vals)) / max(len(vals), 1),
                color="navy", alpha=0.7, edgecolor="black")
@@ -172,6 +173,18 @@ def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
     ax[3].set_xlabel("GT filament area (px at 2048)")
     ax[3].set_ylabel("fraction matched (IoU > 0.5)")
     ax[3].set_title("recall by filament size")
+    causes = [("missed", "no overlapping prediction"), ("partial", "covered < 50 %"),
+              ("merged", "merged with a neighbour"), ("too_large", "prediction too large"),
+              ("fragmented", "fragmented (union would match)")]
+    vals = [tax["gt"][k] for k, _ in causes] + [tax["pred"]["spurious"], tax["pred"]["overlapping"]]
+    names = [f"FN: {d}" for _, d in causes] + ["FP: no overlap with any GT", "FP: overlaps a GT (IoU <= 0.5)"]
+    colors = ["crimson"] * len(causes) + ["darkorange"] * 2
+    ax[4].barh(range(len(vals))[::-1], vals, color=colors, alpha=0.7, edgecolor="black")
+    ax[4].set_yticks(range(len(vals))[::-1], names, fontsize=8)
+    ax[4].set_xlabel("count (per annotator set)")
+    ub = tax["upper_bounds"]
+    ax[4].set_title(f"error causes (PQ upper bounds: fragments grouped {ub['group_fragments']:.3f},\n"
+                    f"isolated false positives removed {ub['remove_spurious']:.3f})", fontsize=9)
     fig.suptitle(f"out-of-fold: {len(probs)} images, {len(gt)} annotator sets -- PQ {res.pq:.4f} "
                  f"(SQ {res.sq:.3f}, RQ {res.rq:.3f}; TP {res.tp}, FP {res.fp}, FN {res.fn})")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -184,7 +197,7 @@ def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
                "gt_degrees": {int(k): int(v) for k, v in sorted(gdeg.items())},
                "pred_degrees": {int(k): int(v) for k, v in sorted(pdeg.items())},
                "recall_by_size": {str(s): round(float(r), 4) for s, r in zip(by_size["size"], by_size["match_rate"])},
-               "error_taxonomy": analysis.error_taxonomy(gt, preds, odf),
+               "error_taxonomy": tax,
                **{k: v for k, v in analysis.aggregation_breakdown(odf).items()}}
     path.with_suffix(".json").write_text(json.dumps(summary, indent=1))
     return path
