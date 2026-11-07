@@ -12,6 +12,7 @@ of different resolutions are ensembled by averaging full-resolution
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 from pathlib import Path
 
@@ -97,6 +98,13 @@ def main(argv=None) -> None:
 
     args.data = find_data_dir(args.data)
     args.out.parent.mkdir(parents=True, exist_ok=True)
+    weights = []
+    for w in args.weights:  # glob patterns allowed (mount paths differ between Kaggle setups)
+        hits = sorted(Path(p) for p in glob.glob(str(w), recursive=True)) if any(ch in str(w) for ch in "*?[") else [w]
+        if not hits:
+            raise FileNotFoundError(f"no weights match {w}")
+        weights += hits
+    args.weights = weights
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cfg = PostConfig(**json.loads(args.post.read_text()))
     models = load_models(args.weights, device)
