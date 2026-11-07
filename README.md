@@ -70,13 +70,20 @@ python -m filseg.train --data MAGFiLO_1.0_Kaggle_2026 --out runs/r34_f0 --fold 0
     --lr 3e-4 --ema 0.999 --tta 4 --predict-test --post configs/post_c1_nested.json
 # several folds in sequence
 python -m filseg.cv --folds 1 2 3 4 --out runs/r34 -- --data MAGFiLO_1.0_Kaggle_2026 --res 2048 ...
-# choose the post-processing by nested CV on all out-of-fold maps
-python scripts/select_post.py --probs runs/*/fold*/val_probs.npz --data MAGFiLO_1.0_Kaggle_2026 --out runs/sel
+# choose the detection shape by nested CV on all out-of-fold maps (also reports the learned filter)
+python scripts/select_post.py --probs runs/*/fold*/val_probs.npz --data MAGFiLO_1.0_Kaggle_2026 --out runs/sel \
+    --thresholds 0.25 0.3 0.35 0.4 0.45 --close 0 4 --mask 0 0.5 --r 1.0 0.77 --learned
+# fit the learned component filter on the selected shape (writes a self-contained post-processing JSON)
+python scripts/fit_scorer.py --components runs/sel/components_t0.25_c0_o0.5.pkl --r 0.77 \
+    --out runs/sel/post_learned_r0.77.json
 # ensemble submission from the saved test maps
-python scripts/ensemble_submit.py --probs runs/*/fold*/test_probs.npz --post runs/sel/post_selected.json \
+python scripts/ensemble_submit.py --probs runs/*/fold*/test_probs.npz --post runs/sel/post_learned_r0.77.json \
     --test-dir MAGFiLO_1.0_Kaggle_2026/test/test_images --out submission.csv
-# collect the weights for the notebook
-python scripts/make_weights.py --runs runs/*/fold* --post runs/sel/post_selected.json --out weights
+# collect the weights for the notebook (optional faster profile with its own filter)
+python scripts/make_weights.py --runs runs/*/fold* --post runs/sel/post_learned_r0.77.json \
+    --fast-post runs/sel_v2s/post_learned_r0.77.json --out weights
+# check that the notebook reproduces the submission from the weights (fresh copy of the repository)
+python scripts/run_notebook.py --profile full --weights weights/manifest.json --out runs/nb_full
 ```
 
 ## Repository layout
