@@ -460,3 +460,32 @@ def test_external_min_gaps():
     used = {dt.date(2015, 3, 10), dt.date(2015, 3, 20)}
     got = min_gaps([dt.date(2015, 3, 12), dt.date(2015, 3, 1), dt.date(2015, 3, 15), dt.date(2015, 3, 30)], used)
     assert got == [2, 9, 5, 10]
+
+
+def test_scorer_export_matches_sklearn_and_filters_components():
+    from sklearn.ensemble import HistGradientBoostingRegressor
+
+    from filseg.components import FEATURES, component_features
+    from filseg.scorer import export_hgb, predict
+
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=(400, 3))
+    y = (x[:, 0] > 0.2) * 0.6 + 0.1 * x[:, 1]
+    model = HistGradientBoostingRegressor(max_iter=30, max_leaf_nodes=7, random_state=0).fit(x, y)
+    spec = export_hgb(model, ["a", "b", "c"])
+    assert np.allclose(predict(spec, x), model.predict(x), atol=1e-12)
+    # a "scorer" that keeps only large components (log_area > log 300)
+    feats = [f for f in FEATURES]
+    xs = rng.uniform(0, 1, size=(300, len(feats)))
+    xs[:, feats.index("log_area")] = rng.uniform(np.log(20), np.log(5000), 300)
+    ys = (xs[:, feats.index("log_area")] > np.log(300)).astype(float)
+    spec = export_hgb(HistGradientBoostingRegressor(max_iter=20, random_state=0).fit(xs, ys), feats)
+    prob = np.zeros((256, 256), np.float32)
+    prob[10:20, 10:20] = 0.9          # 100 px  -> dropped
+    prob[100:130, 100:150] = 0.9      # 1500 px -> kept
+    prob[200:230, 30:60] = 0.6        # 900 px  -> kept, then shrinks to nothing at outline 0.7 -> dropped
+    lab, stats = instances_from_prob(prob, PostConfig(threshold=0.5, scorer=spec, min_score=0.5, mask_threshold=0.0))
+    assert lab.max() == 2 and len(stats) == 2 and (lab[105, 105] > 0) and lab[15, 15] == 0
+    lab, stats = instances_from_prob(prob, PostConfig(threshold=0.5, scorer=spec, min_score=0.5, mask_threshold=0.7))
+    assert lab.max() == 1 and lab[105, 105] == 1 and lab[210, 40] == 0
+    assert len(component_features(prob, lab)) == 1

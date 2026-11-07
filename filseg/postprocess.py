@@ -47,6 +47,11 @@ class PostConfig:
     merge_distance: int = 0        # merge components closer than this (px); 0 disables
     dilate_radius: int = 0         # grow (+) each final instance; applied after CC
     mask_threshold: float = 0.0    # redraw kept instances at this probability level (0 = keep the detection outline)
+    scorer: dict | None = None     # learned component filter (filseg.scorer spec); replaces the min_* rule
+    min_score: float = 0.0         # keep candidates whose learned score exceeds this
+
+
+SCORER_MIN_AREA = 0  # candidates of the learned filter: all components (as built by select_post / components.build)
 
 
 def _disk(r: int) -> np.ndarray:
@@ -58,6 +63,8 @@ def instances_from_prob(prob: np.ndarray, cfg: PostConfig = PostConfig()) -> tup
 
     Instances in the label map are disjoint, numbered 1..n.
     """
+    if cfg.scorer is not None:
+        return _instances_learned(prob, cfg)
     fg = prob > cfg.threshold
     if cfg.close_radius > 0:
         fg = cv2.morphologyEx(fg.astype(np.uint8), cv2.MORPH_CLOSE, _disk(cfg.close_radius)).astype(bool)
@@ -97,6 +104,38 @@ def instances_from_prob(prob: np.ndarray, cfg: PostConfig = PostConfig()) -> tup
     if cfg.mask_threshold > 0 and cfg.mask_threshold != cfg.threshold and k > 0:
         out = refine_extent(out, prob, cfg.mask_threshold, cfg.threshold, cfg.fill_holes)
     if cfg.dilate_radius > 0 and k > 0:
+        out = grow_labels(out, cfg.dilate_radius)
+    return out, stats
+
+
+def _instances_learned(prob: np.ndarray, cfg: PostConfig) -> tuple[np.ndarray, list[dict]]:
+    """Instances selected by the learned component filter ``cfg.scorer``.
+
+    Candidates are all components of the detection outline (``SCORER_MIN_AREA``), exactly the
+    candidates the filter was trained on (:func:`filseg.components.build` as called by
+    ``scripts/select_post.py``); their features are computed on that outline, components scoring above
+    ``cfg.min_score`` are kept and then redrawn at ``cfg.mask_threshold``.
+    """
+    from dataclasses import replace
+
+    from .components import component_features
+    from .scorer import predict
+
+    cand = replace(cfg, scorer=None, min_area=SCORER_MIN_AREA, min_mean_prob=0.0, min_max_prob=0.0,
+                   mask_threshold=0.0, dilate_radius=0)
+    lab, stats = instances_from_prob(prob, cand)
+    if not stats:
+        return lab, stats
+    feats = component_features(prob, lab)
+    x = np.array([[f[k] for k in cfg.scorer["features"]] for f in feats], np.float64)
+    keep = predict(cfg.scorer, x) > cfg.min_score
+    remap = np.zeros(len(feats) + 1, np.int32)
+    remap[1:][keep] = np.arange(1, int(keep.sum()) + 1, dtype=np.int32)
+    out = remap[lab]
+    stats = [dict(s, label=int(remap[s["label"]])) for s, kp in zip(stats, keep) if kp]
+    if stats and cfg.mask_threshold > 0 and cfg.mask_threshold != cfg.threshold:
+        out = refine_extent(out, prob, cfg.mask_threshold, cfg.threshold, cfg.fill_holes)
+    if stats and cfg.dilate_radius > 0:
         out = grow_labels(out, cfg.dilate_radius)
     return out, stats
 
