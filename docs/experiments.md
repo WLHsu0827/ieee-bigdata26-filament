@@ -112,3 +112,12 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   configuration run through the official evaluation reproduces the component-table PQ exactly on fold 0
   (features recomputed on another machine can differ by ~1e-7 and moved one of 1,933 candidates across a
   tree split; the check therefore rebuilds the candidates locally).
+* Reproducibility run (11-08, kernel fil-nb-verify, `scripts/run_notebook.py`): `notebooks/pipeline.ipynb`
+  executed with nbconvert in a fresh copy of the repository on a Kaggle T4, loading the fp16 weights of
+  `weights/` (no training), all 180 test images. Profile `full` (10 networks, learned filter r = 0.77):
+  26.5 min, **8.5 s/image** (8.0 s networks + 0.5 s post-processing), 1,076 filaments; profile `fast`
+  (5 EfficientNetV2-S networks with their own learned filter): 17.0 min, **5.3 s/image**, 1,059 filaments.
+  The `full` output agrees with the file built from the training-time probability maps at PQ 0.998
+  (1,074 of 1,076 instances identical, two borderline candidates differ through fp16 rounding); the
+  notebook outputs are therefore the files submitted from now on. Environment: Python 3.13.16, numpy 2.1.3,
+  torch 2.11.0, segmentation-models-pytorch 0.6.0, timm 1.0.30 (pinned in `requirements.txt`).
