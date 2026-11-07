@@ -19,6 +19,8 @@ scored separately. LB = public leaderboard (~50 % of the test images).
 | K1-r34 | 11-07 | U-Net ResNet34, native 2048 px (768 crops, 4 per image per epoch), disk normalisation, lr 3e-4, EMA 0.999 + warm-up, 30 epochs, TTA4; 5-fold CV on Kaggle T4 (GPU 0 of kernel fil-gpu-k1) | folds 0-4: 0.4276 / 0.4247 / 0.4163 / 0.4253 / 0.4181, mean **0.4224** with the fixed nested rule of E1 | - | 1.26-1.37 h per fold on one T4; inference 1.13-1.14 s/image (network, TTA4) + 0.49-0.55 s post |
 | K1-v2s | 11-07 | same with EfficientNetV2-S encoder (timm tf_efficientnetv2_s), bs 6, 21-24 epochs (time budget 1.48 h per fold; GPU 1) | folds 0-4: 0.4375 / 0.4288 / 0.4208 / 0.4356 / 0.4375, mean **0.4320** | - | 1.38-1.53 h per fold; 1.39-1.48 s/image + 0.54-0.57 s post. K1 total 7.5 GPU h (T4 x2, 17:29-01:01) |
 | K1-ens-fixed | 11-08 | ensemble of the 10 K1 models (mean probability, TTA4), fixed E1 nested rule (t 0.35, closing 4, area >= 300, mean >= 0.8, peak >= 0.99) | - (nested selection on all 707 OOF images: fil-ana) | **0.38** (rank 414 / 1,419; was 0.35 / 693) | 7.2 filaments per test image; 12.8 s/image network (10 models, TTA4, T4) + 0.4 s post |
+| K1-ens-r1 | 11-08 | same ensemble; rule by nested CV on all 707 OOF images, plain PQ (t 0.30, no closing, area >= 200, mean >= 0.85, peak >= 0.99, outline 0.5; same rule in 4 / 5 outer folds) | nested **0.4422** (in-sample 0.4444) | 0.38 | 6.6 filaments per test image; learned filter on this shape: nested 0.4455 vs rule 0.4441 |
+| K1-ens-r077 | 11-08 | same ensemble; rule by nested CV on all 707 OOF images with the robust objective r = 0.77 (t 0.25, no closing, no area minimum, mean >= 0.85, peak >= 0.99, outline 0.5) | nested **0.4426** (objective 0.389) | **0.39** (rank 306 / 1,419) | 6.1 filaments per test image; learned filter on this shape: nested 0.4472 vs rule 0.4432 |
 
 ### Notes on E1 (11-06)
 
@@ -84,3 +86,12 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   single-annotator. Selection of small components is therefore a trade-off against annotator-specific
   filaments, not a blind spot of the network; a better small-component discriminator is the remaining
   post-processing lever (learned filter re-tested on the 707 K1 out-of-fold images).
+* K1 out-of-fold selection (fil-ana, 707 images, 1,154 annotator sets): two encoders 0.4422 nested (r = 1) /
+  0.4426 (r = 0.77); EfficientNetV2-S folds alone 0.4401 / 0.4381 (rule t 0.30, closing 4, area >= 300,
+  mean >= 0.85, outline 0.5; 7.1 s/image); ResNet34 folds alone 0.4318 / 0.4307 (mean >= 0.9). The selected
+  rule is close to the public reference's (mean >= 0.85, peak >= 0.99, area >= 200). Evaluation of the r = 1
+  rule (in-sample, `docs/evaluation.json`): PQ 0.4445, SQ 0.682, RQ 0.651; recall < 300 px 25 % (1024 px
+  model: 1 %), 300-600 px 49 % (33 %); FN 3,038 = 1,751 missed + 481 partial + 348 too large + 304 merged +
+  154 fragmented; FP 2,485 = 1,041 isolated + 1,444 overlapping. Upper bounds: isolated FPs removed 0.476,
+  fragments grouped 0.461. Public LB: plain-PQ rule 0.38, robust r = 0.77 rule 0.39 -- the stricter selection
+  transfers better again (third time, consistent with sparser test labels).
