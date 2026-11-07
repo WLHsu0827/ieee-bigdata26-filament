@@ -46,6 +46,7 @@ class PostConfig:
     min_max_prob: float = 0.0      # peak probability inside the component
     merge_distance: int = 0        # merge components closer than this (px); 0 disables
     dilate_radius: int = 0         # grow (+) each final instance; applied after CC
+    mask_threshold: float = 0.0    # redraw kept instances at this probability level (0 = keep the detection outline)
 
 
 def _disk(r: int) -> np.ndarray:
@@ -93,9 +94,44 @@ def instances_from_prob(prob: np.ndarray, cfg: PostConfig = PostConfig()) -> tup
         stats.append(dict(label=k, area=area, mean_prob=mean_p, max_prob=max_p,
                           y0=sl[0].start, x0=sl[1].start, y1=sl[0].stop, x1=sl[1].stop))
 
+    if cfg.mask_threshold > 0 and cfg.mask_threshold != cfg.threshold and k > 0:
+        out = refine_extent(out, prob, cfg.mask_threshold, cfg.threshold, cfg.fill_holes)
     if cfg.dilate_radius > 0 and k > 0:
         out = grow_labels(out, cfg.dilate_radius)
     return out, stats
+
+
+def refine_extent(lab: np.ndarray, prob: np.ndarray, t_mask: float, t_detect: float,
+                  fill_holes: bool = True) -> np.ndarray:
+    """Redraw the outline of every instance at probability level ``t_mask``.
+
+    Detection (which components exist) and extent (where each outline lies) are
+    decoupled: with ``t_mask < t_detect`` an instance grows into the connected region
+    ``p > t_mask`` around it (pixels reachable from several instances go to the one
+    reached along the highest probabilities: watershed on ``-p``, so instances stay
+    disjoint); with ``t_mask > t_detect`` it shrinks to its pixels with ``p > t_mask``.
+    Instances that vanish are dropped and labels renumbered 1..n. Per-instance
+    statistics returned by :func:`instances_from_prob` refer to the detection outline.
+    """
+    if t_mask < t_detect:
+        from skimage.segmentation import watershed
+
+        out = watershed(-prob, markers=lab, mask=(prob > t_mask) | (lab > 0)).astype(np.int32)
+    else:
+        out = np.where(prob > t_mask, lab, 0).astype(np.int32)
+    if fill_holes:
+        for i, sl in enumerate(ndi.find_objects(out), start=1):
+            if sl is None:
+                continue
+            filled = ndi.binary_fill_holes(out[sl] == i)
+            out[sl][filled & (out[sl] == 0)] = i
+    ids = np.unique(out)
+    ids = ids[ids > 0]
+    if len(ids) and ids[-1] != len(ids):
+        remap = np.zeros(int(ids[-1]) + 1, np.int32)
+        remap[ids] = np.arange(1, len(ids) + 1, dtype=np.int32)
+        out = remap[out]
+    return out
 
 
 def grow_labels(lab: np.ndarray, radius: int) -> np.ndarray:

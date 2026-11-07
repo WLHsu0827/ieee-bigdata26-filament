@@ -2,6 +2,7 @@ numpy
 pandas
 opencv-python-headless
 scipy
+scikit-image
 pycocotools
 torch
 segmentation-models-pytorch

@@ -346,3 +346,20 @@ def test_cached_arrays_roundtrip(tmp_path):
     other = cached_arrays(tmp_path / "cache", tmp_path / "data", {"img0": groups["img0"]}, 256, 0, 0.0, "disk",
                           msgs.append)
     assert len(other[0]) == 1          # a different image list never reuses the cache
+
+
+def test_refine_extent_grow_and_shrink():
+    from filseg.postprocess import instances_from_prob
+    prob = np.zeros((128, 128), np.float32)
+    prob[20:30, 20:60] = 0.9          # instance A core
+    prob[20:30, 70:100] = 0.9         # instance B core
+    prob[18:32, 15:105] = np.maximum(prob[18:32, 15:105], 0.3)   # faint halo joining A and B
+    prob[80:84, 80:84] = 0.6          # weak instance C (vanishes when shrinking to 0.7)
+    base, _ = instances_from_prob(prob, PostConfig(threshold=0.5, min_area=1))
+    assert base.max() == 3
+    grown, _ = instances_from_prob(prob, PostConfig(threshold=0.5, min_area=1, mask_threshold=0.2))
+    assert grown.max() == 3 and (grown > 0).sum() > (base > 0).sum()
+    assert (grown[18:32, 15:105] > 0).all()                          # halo fully assigned ...
+    assert set(np.unique(grown[18:32, 15:105])) == {1, 2}            # ... to A or B, never shared
+    shrunk, _ = instances_from_prob(prob, PostConfig(threshold=0.5, min_area=1, mask_threshold=0.7))
+    assert shrunk.max() == 2 and set(np.unique(shrunk)) == {0, 1, 2}  # C dropped, labels renumbered

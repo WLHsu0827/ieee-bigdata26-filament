@@ -34,4 +34,10 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   mean probability >= 0.8, peak >= 0.99 (`configs/post_c1_nested.json`). Optimising PQ under a
   label rate r = 0.77 picks a similar rule (threshold 0.30, area >= 400, mean >= 0.8).* Fragment grouping (merge nearby components, 10 / 20 px) on E1: nested PQ 0.4175 vs 0.4167 without
   (in-sample best 0.4268 with 10 px vs 0.4250) -- within noise; kept as an option for the final
-  selection on the full out-of-fold set.
+  selection on the full out-of-fold set.* Why is the public LB ~0.82 x validation? Two hypotheses checked against E1 / E0b (11-07):
+  (a) test labels sparser (each GT kept with probability r): r = 0.68 reproduces both public
+  scores (E1 0.340 vs LB 0.34, E0b 0.296 vs 0.30); (b) test GT without the "Unidentifiable"
+  class (34 % of training filaments, smaller: median 868 px vs ~1,500 px): E1 0.367 vs 0.34,
+  E0b 0.311 vs 0.30 -- fits worse. Both favour stricter selection (fewer, larger instances) than
+  the validation optimum; we do not tune on the public LB, but one of the two final submissions
+  can use a rule chosen under hypothesis (a).
