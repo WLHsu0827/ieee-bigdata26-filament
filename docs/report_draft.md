@@ -141,9 +141,11 @@ folds of a nested cross-validation of the post-processing on all 707 out-of-fold
 
 * Error profile of the final ensemble (707 out-of-fold images, 8,199 GT filaments of 1,154
   annotator sets): 63 % matched, SQ 0.68. Of the unmatched GT filaments 58 % have no
-  overlapping prediction (mostly small, faint or drawn by one annotator only; for the 1024 px
-  model, 74 % of the filaments another annotator also drew were matched but only 31 % of the
-  single-annotator ones), 16 % are covered by less than half, 11 % by a too-large and 10 % by a merged
+  overlapping prediction (71 % of them < 1,200 px; 74 % contain probabilities >= 0.5, i.e. the
+  network sees them but the filter drops them). On images with several annotators the ensemble
+  (learned filter) matches 82 % of the filaments that another annotator also drew but only 32 %
+  of those drawn by a single annotator, so the remaining error is largely annotator
+  disagreement. 16 % of the unmatched GT filaments are covered by less than half, 11 % by a too-large and 10 % by a merged
   prediction, and 5 % are fragmented. Removing all isolated false positives would give PQ
   0.476 and perfect fragment grouping 0.461 (upper bounds).
 

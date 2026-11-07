@@ -121,3 +121,9 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   (1,074 of 1,076 instances identical, two borderline candidates differ through fp16 rounding); the
   notebook outputs are therefore the files submitted from now on. Environment: Python 3.13.16, numpy 2.1.3,
   torch 2.11.0, segmentation-models-pytorch 0.6.0, timm 1.0.30 (pinned in `requirements.txt`).
+* Final ensemble + learned filter (r = 0.77) on all 707 out-of-fold images (fold-wise, in-sample for the
+  filter): 61.8 % of GT filaments matched; 24.6 % without any overlapping prediction, of which 74 % contain
+  probabilities >= 0.5 (dropped by the filter) and 71 % are < 1,200 px. On multi-annotator images 62.8 %
+  of the filaments are matched (IoU > 0.5) by another annotator; the ensemble matches 81.5 % of those vs
+  32.2 % of the single-annotator ones. Recall by area: < 300 px 0.26, 300-600 0.46, 600-1200 0.64,
+  1200-2500 0.69, 2500-5000 0.70, > 5000 0.68.
