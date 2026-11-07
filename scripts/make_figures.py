@@ -23,13 +23,13 @@ def pipeline_diagram(path: Path = FIG / "pipeline.png") -> Path:
     """System block diagram: inputs, processing blocks, key intermediate signals, outputs."""
     blocks = [
         ("H-alpha image\n2048 x 2048, 8-bit grey", "#dbe9f6"),
-        ("Pre-processing\nresize to network res.\nnormalise", "#f2f2f2"),
-        ("U-Net ensemble\n+ flip TTA", "#fde9d9"),
-        ("Instance extraction\nthreshold, fill holes,\nconnected components,\nPQ-aware selection", "#f2f2f2"),
+        ("Pre-processing\nnormalise with the\nimage's statistics\ninside the solar disk", "#f2f2f2"),
+        ("U-Net ensemble\n5 x ResNet34 +\n5 x EfficientNetV2-S\n+ flip TTA (x4)", "#fde9d9"),
+        ("Instance extraction\nthreshold, components,\nlearned PQ-aware filter,\noutline at P > 0.5", "#f2f2f2"),
         ("submission.csv\none COCO RLE\nper filament", "#e2efda"),
     ]
-    signals = ["image x\n(1 x R x R)", "logits -> P(filament)\n= expected fraction\nof annotators",
-               "P upsampled\nto 2048 x 2048", "disjoint instance\nlabel map"]
+    signals = ["image x\n(1 x 2048 x 2048)", "logits -> P(filament)\n= expected fraction\nof annotators",
+               "mean P of the\n10 networks", "disjoint instance\nlabel map"]
     fig, ax = plt.subplots(figsize=(15, 3.2))
     ax.set_xlim(0, 15)
     ax.set_ylim(0, 3.2)
@@ -46,7 +46,7 @@ def pipeline_diagram(path: Path = FIG / "pipeline.png") -> Path:
         ax.text((x0 + x1) / 2, y + h + 0.12, s, ha="center", va="bottom", fontsize=8, color="#203864")
     ax.text(xs[2] + w / 2, 0.42, "target: per-pixel fraction\nof annotators (soft labels);\nBCE + soft Dice, EMA",
             ha="center", va="center", fontsize=8, color="#7f3f00")
-    ax.text(xs[3] + w / 2, 0.42, "keep a component iff its\nexpected matched IoU per\nannotator > PQ / 2",
+    ax.text(xs[3] + w / 2, 0.42, "keep a candidate iff its predicted\nmatched IoU per annotator > ~PQ / 2\n(gradient-boosted trees, 12 features)",
             ha="center", va="center", fontsize=8, color="#7f3f00")
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=150, bbox_inches="tight")
@@ -69,8 +69,11 @@ def overlays(probs_npz: Path, post_json: Path, data_dir: Path, image_ids: list[s
     from filseg import data
     from filseg.postprocess import PostConfig, instances_from_prob, upsample
 
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from analyze_oof import load_probs
+
     groups = data.group_by_image(data.load_entries(data_dir / "train" / data.TRAIN_JSON))
-    probs = np.load(probs_npz)
+    probs = load_probs([Path(p) for p in str(probs_npz).split(",")])  # several files: ensemble mean
     cfg = PostConfig(**json.loads(Path(post_json).read_text()))
     colors = [(255, 60, 60), (60, 220, 60), (60, 140, 255)]
     fig, axes = plt.subplots(len(image_ids), 3, figsize=(15, 5 * len(image_ids)))
@@ -82,7 +85,7 @@ def overlays(probs_npz: Path, post_json: Path, data_dir: Path, image_ids: list[s
             for poly in e.polygons:
                 pts = np.round(np.array(poly).reshape(-1, 2)).astype(np.int32)
                 cv2.polylines(gt_vis, [pts], True, col, 3)
-        lab, _ = instances_from_prob(upsample(probs[iid].astype(np.float32) / 255.0), cfg)
+        lab, _ = instances_from_prob(upsample(probs[iid]), cfg)
         pred_vis = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
         palette = [(255, 215, 0), (255, 0, 255), (0, 255, 255), (255, 128, 0), (0, 255, 0), (255, 64, 64)]
         for k in range(1, lab.max() + 1):
