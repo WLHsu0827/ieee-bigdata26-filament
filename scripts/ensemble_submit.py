@@ -62,7 +62,9 @@ def main() -> None:
         tj = p.parent / "timing.json"
         if tj.exists():
             timing.append(json.loads(tj.read_text()))
-    model_s = sum(t["model_s_per_image"] for t in timing) if len(timing) == len(args.probs) else float("nan")
+    # timing.json from filseg.train (model_s_per_image) or filseg.infer (network_s_per_image)
+    secs = [t.get("model_s_per_image", t.get("network_s_per_image")) for t in timing]
+    model_s = sum(secs) if len(timing) == len(args.probs) and None not in secs else float("nan")
     print(f"{len(test_ids)} images, {len(df)} filaments -> {args.out}; check: {report}")
     print(f"ensemble of {len(args.probs)} models: network {model_s:.2f} s/image (sum of runs' timing.json, "
           f"{timing[0]['device'] if timing else '?'}), averaging + post-processing {post_s:.2f} s/image here")
