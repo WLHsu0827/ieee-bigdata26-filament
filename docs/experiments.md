@@ -14,6 +14,8 @@ scored separately. LB = public leaderboard (~50 % of the test images).
 | H2 | 11-06 | leave-one-annotator-out on 3-annotator images (`scripts/annotator_agreement.py`): union / intersection of the *other two* annotators vs the held-out one | union 0.332 (0.635 / 0.524); intersection 0.314 (0.637 / 0.492) | - | a 2-person consensus predicts a third annotator no better than one annotator (pairwise 0.340): annotator style dominates; realistic honest PQ ceiling is far below the 0.648 oracle |
 | E1 | 11-06 | U-Net ResNet34 (ImageNet), 1024 px full disk, soft consensus target, BCE + Dice, AdamW 5e-4 cosine, EMA 0.999 (no warm-up), 40 ep, bs 6, flips/rotation/scale/photometric aug; flip TTA x4; post-processing grid on fold 0: threshold 0.35, closing r=4, fill holes, min area 500 px | 0.4155 (0.671 / 0.619); TTA1 + default post 0.387 | 0.34 | Colab T4, 1.14 h; inference 0.65 s/image on T4 (0.21 s network, 0.42 s post-processing + RLE); EMA mid-run validations unusable (fixed later with EMA warm-up) |
 | E0b | 11-06 | as E1 but 512 px, global norm, 25 epochs on Kaggle CPU (9.7 h), no EMA; post grid: threshold 0.55, closing 4, min area 500 | 0.365 (0.649 / 0.562) | 0.30 | resolution 512 -> 1024 = +0.05 PQ on fold 0 |
+| E1c | 11-07 | E1 model, rule from nested CV with plain PQ (threshold 0.35, closing 4, area >= 300, mean >= 0.8, peak >= 0.99) | nested 0.417 | 0.35 | same network outputs as E1 (re-inferred on Kaggle CPU, TTA4: 14.8 s/image on 4 CPU cores) |
+| E1d | 11-07 | E1 model, rule from nested CV with robust objective r = 0.77 (threshold 0.30, closing 4, area >= 400, mean >= 0.8, outline 0.5) | nested 0.425 | 0.35 | stricter selection transfers (+0.01 vs the grid-tuned rule, LB 0.34) |
 
 ### Notes on E1 (11-06)
 
