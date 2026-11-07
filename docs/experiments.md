@@ -75,3 +75,11 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   kept instances at 0.45 / 0.5): nested PQ on E1 0.419 (plain-PQ objective; t = 0.25 chosen in 4 / 5 outer folds)
   and 0.424 (r = 0.77; same final rule as before: t 0.30, area >= 400, mean >= 0.8, outline 0.5) vs 0.417 / 0.425
   with thresholds >= 0.3 -- within noise. t = 0.25 is added to the K1 selection grid.
+* What limits detection (E1, r = 0.77 rule; 460 GT filaments without any overlapping prediction): 286 of
+  them (62 %) contain probabilities >= 0.5 (246 >= 0.8), i.e. the network marks them and the selection rule
+  (area >= 400, mean >= 0.8) drops them; only 79 have a peak < 0.3. They are small (347 of 460 < 1,200 px).
+  On multi-annotator images the network matches 74 % of the filaments that another annotator also drew
+  (IoU > 0.5) but only 31 % of those drawn by one annotator only; 35 % of all filaments there are
+  single-annotator. Selection of small components is therefore a trade-off against annotator-specific
+  filaments, not a blind spot of the network; a better small-component discriminator is the remaining
+  post-processing lever (learned filter re-tested on the 707 K1 out-of-fold images).
