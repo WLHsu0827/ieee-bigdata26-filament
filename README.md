@@ -38,7 +38,8 @@ IoU exceeds 0.5), computed against every annotator's set of polygons separately.
    decides which candidates to keep. Kept instances are redrawn where the
    probability exceeds 0.5.
 
-Experiments and numbers: `docs/experiments.md`. Report draft: `docs/report_draft.md`.
+Experiments and numbers: `docs/experiments.md`. Report: `docs/report/main.tex` (draft in
+`docs/report_draft.md`). Figures: `docs/figures/` (pipeline, out-of-fold evaluation, morphology examples).
 
 ## Reproducing the submission
 
@@ -98,12 +99,16 @@ python scripts/run_notebook.py --profile full --weights weights/manifest.json --
 | `filseg/model.py` | network, normalisation, fp16 checkpoints, flip / rotation TTA prediction |
 | `filseg/train.py`, `filseg/cv.py` | training (EMA, OOM fallback, time budget), CV driver |
 | `filseg/postprocess.py`, `filseg/tune.py` | probability map -> instances; post-processing scoring |
-| `filseg/components.py` | per-component PQ decomposition, nested rule selection |
+| `filseg/components.py` | per-component PQ decomposition, nested rule selection, nested CV of the learned filter |
+| `filseg/scorer.py` | learned component filter: gradient-boosted trees exported to JSON, numpy inference |
 | `filseg/analysis.py` | error analysis (by size, aggregation, matching degrees, error causes with PQ upper bounds) |
 | `filseg/infer.py` | inference / ensembling from saved weights |
 | `filseg/classical.py` | traditional (non-learning) darkness-threshold baseline |
 | `scripts/` | label agreement, OOF analysis, rule selection, model comparison, ensembling, figures, checks; optional semi-supervised tools (`fetch_gong.py` unlabelled archive images, `pseudo_label.py` teacher maps, `chain.py`) |
-| `configs/` | post-processing configurations |
+| `configs/` | post-processing configurations (`post_final_full.json` / `post_final_fast.json` = submission) |
+| `notebooks/` | `pipeline.ipynb` (executed) and its generator |
+| `weights/` | the ten fp16 networks (one per encoder and fold) and `manifest.json` (files, SHA-256, training arguments, post-processing of both profiles) |
+| `docs/` | experiment log, report, figures, evaluation numbers, list of the external images |
 | `kaggle/` | builders for self-contained Kaggle kernels and Colab notebooks |
 | `tests/` | unit tests (`python -m pytest tests`) |
 
@@ -112,8 +117,8 @@ python scripts/run_notebook.py --profile full --weights weights/manifest.json --
 The MAGFiLO images and annotations are provided by the competition organisers
 (GONG data courtesy of NSO/AURA/NSF) and are **not** redistributed here.
 Training uses only the competition's training annotations; inference uses only
-the test H-alpha images. The optional semi-supervised experiments additionally use
-*unlabelled* GONG H-alpha images from the public NSO archive, taken on days at least
+the test H-alpha images. The semi-supervised experiment (tested, **not used** by the final models; see
+`docs/experiments.md`) additionally used *unlabelled* GONG H-alpha images from the public NSO archive, taken on days at least
 two days away from every competition image (`scripts/fetch_gong.py`; images are fetched,
 not redistributed). `docs/external_gong_manifest.csv` lists every image (URL, date, SHA-256 of the
 original and of the processed file); `scripts/check_external.py` re-checks the date gap against all
