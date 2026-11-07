@@ -25,8 +25,8 @@ components (lossless here, because annotated filaments practically never touch),
 instances with the help of an exact per-component decomposition of PQ: the post-processing is
 chosen by nested cross-validation and the final keep decision is made by a small learned
 component filter. Ten networks (ResNet34 and EfficientNetV2-S encoders, five folds each) reach a
-nested out-of-fold PQ of 0.447 at 8.5\,s per image on one T4 GPU; five EfficientNetV2-S networks
-alone reach 0.444 at 5.3\,s. Code, weights and a notebook that reproduces the submission without
+nested out-of-fold PQ of 0.447 at about 8\,s per image on one T4 GPU; five EfficientNetV2-S networks
+alone reach 0.444 at about 5\,s. Code, weights and a notebook that reproduces the submission without
 re-training are provided in the accompanying repository.
 \end{abstract}
 
@@ -167,8 +167,8 @@ the grid-tuned rule of the 1024\,px model (0.35 vs.\ 0.34), and for the ensemble
 plain PQ (0.39 vs.\ 0.38). We used the leaderboard only to confirm transfer, never to tune.
 
 \textbf{Efficiency and reproducibility.} Executing the pipeline notebook on one T4 GPU for the 180
-test images takes 8.0\,s (ten networks, flip TTA $\times4$) plus 0.5\,s (post-processing) per image;
-the \emph{fast} profile (five networks) takes 4.8\,+\,0.5\,s. The notebook reproduces the submission
+test images takes 7.4--8.0\,s (ten networks, flip TTA $\times4$) plus 0.5\,s (post-processing) per image in two
+runs; the \emph{fast} profile (five networks) takes 4.7--4.8\,+\,0.5\,s. The notebook reproduces the submission
 from the stored fp16 weights (agreement PQ 0.998 with the training-time predictions).
 
 \textbf{Negative results.} (i) Noisy-student training \cite{xie2020noisystudent} with 1,200 unlabelled

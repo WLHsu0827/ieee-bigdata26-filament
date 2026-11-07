@@ -18,8 +18,8 @@ for this data set because annotated filaments practically never touch, and
 (iii) select instances with a rule derived from an exact per-component
 decomposition of PQ and chosen by nested cross-validation. An ensemble of
 ResNet34 and EfficientNetV2-S U-Nets with a learned component filter reaches a
-nested out-of-fold PQ of 0.447 (human agreement 0.34) at 8.5 s per image on one
-T4 GPU; five EfficientNetV2-S networks alone reach 0.444 at 5.3 s per image.
+nested out-of-fold PQ of 0.447 (human agreement 0.34) at about 8 s per image on one
+T4 GPU; five EfficientNetV2-S networks alone reach 0.444 at about 5 s per image.
 
 ## 1. Data and label analysis
 
