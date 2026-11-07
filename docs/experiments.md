@@ -18,6 +18,7 @@ scored separately. LB = public leaderboard (~50 % of the test images).
 | E1d | 11-07 | E1 model, rule from nested CV with robust objective r = 0.77 (threshold 0.30, closing 4, area >= 400, mean >= 0.8, outline 0.5) | nested 0.425 | 0.35 | stricter selection transfers (+0.01 vs the grid-tuned rule, LB 0.34) |
 | K1-r34 | 11-07 | U-Net ResNet34, native 2048 px (768 crops, 4 per image per epoch), disk normalisation, lr 3e-4, EMA 0.999 + warm-up, 30 epochs, TTA4; 5-fold CV on Kaggle T4 (GPU 0 of kernel fil-gpu-k1) | folds 0-4: 0.4276 / 0.4247 / 0.4163 / 0.4253 / 0.4181, mean **0.4224** with the fixed nested rule of E1 | - | 1.26-1.37 h per fold on one T4; inference 1.13-1.14 s/image (network, TTA4) + 0.49-0.55 s post |
 | K1-v2s | 11-07 | same with EfficientNetV2-S encoder (timm tf_efficientnetv2_s), bs 6, 21-24 epochs (time budget 1.48 h per fold; GPU 1) | folds 0-4: 0.4375 / 0.4288 / 0.4208 / 0.4356 / 0.4375, mean **0.4320** | - | 1.38-1.53 h per fold; 1.39-1.48 s/image + 0.54-0.57 s post. K1 total 7.5 GPU h (T4 x2, 17:29-01:01) |
+| K1-ens-fixed | 11-08 | ensemble of the 10 K1 models (mean probability, TTA4), fixed E1 nested rule (t 0.35, closing 4, area >= 300, mean >= 0.8, peak >= 0.99) | - (nested selection on all 707 OOF images: fil-ana) | **0.38** (rank 414 / 1,419; was 0.35 / 693) | 7.2 filaments per test image; 12.8 s/image network (10 models, TTA4, T4) + 0.4 s post |
 
 ### Notes on E1 (11-06)
 
