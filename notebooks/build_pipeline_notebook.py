@@ -179,8 +179,8 @@ def main() -> None:
           "metadata": {"kernelspec": {"name": "python3", "display_name": "Python 3"},
                        "language_info": {"name": "python"}},
           "cells": []}
-    for kind, src in CELLS:
-        cell = {"cell_type": kind, "metadata": {}, "source": src.splitlines(keepends=True)}
+    for i, (kind, src) in enumerate(CELLS):
+        cell = {"cell_type": kind, "id": f"cell-{i:02d}", "metadata": {}, "source": src.splitlines(keepends=True)}
         if kind == "code":
             cell.update(execution_count=None, outputs=[])
         nb["cells"].append(cell)
