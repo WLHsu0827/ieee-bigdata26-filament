@@ -157,65 +157,47 @@ def extra_pairs(patterns, target_dir: Path) -> list[tuple[Path, Path]]:
     return [(f, t) for f, t in pairs if t.exists()]
 
 
-def _prepare_extra_one(args):
+def _read_extra_image(args):
+    from .model import image_stats, resize_image
+    path, res, norm = args
+    img = data.read_image(path)
+    return resize_image(img, res), image_stats(img, norm)
+
+
+def _read_extra_target(args):
     import cv2
 
-    from .model import image_stats, resize_image
-    img_path, tgt_path, res, norm = args
-    img = data.read_image(img_path)
-    tgt = cv2.imread(str(tgt_path), cv2.IMREAD_GRAYSCALE)
+    from .model import resize_image
+    path, res = args
+    tgt = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
     if tgt is None:
-        raise FileNotFoundError(tgt_path)
-    return resize_image(img, res), resize_image(tgt, res), image_stats(img, norm)
+        raise FileNotFoundError(path)
+    return resize_image(tgt, res)
 
 
-def cached_extra(cache_dir: Path | None, pairs: list[tuple[Path, Path]], res: int, workers: int,
-                 norm: str = "global", log=print, wait_hours: float = 3.0):
-    """Images, teacher targets (uint8) and normalisation statistics of unlabelled images.
+def _locked_memmaps(d: Path, specs: dict, fill, owner: bool | None = None, log=print,
+                    wait_hours: float = 3.0) -> dict[str, np.ndarray]:
+    """Create the ``.npy`` arrays ``specs`` (name -> (dtype, shape)) in ``d`` once and memory-map them.
 
-    The arrays are written straight into memory-mapped ``.npy`` files (no in-memory copy, so
-    thousands of 2048 px images fit). With ``cache_dir`` set, one process prepares them under a
-    lock file while concurrent processes (other GPUs) wait and then map the same files.
+    The first process takes ``d/lock`` and writes the arrays through ``fill(arrays)`` straight into
+    memory-mapped files (no in-memory copy); concurrent processes wait for ``d/done``.
     """
-    import hashlib
-    import shutil
-    import tempfile
-
-    if cache_dir is None:
-        d, owner = Path(tempfile.mkdtemp(prefix="filseg_extra_")), True
-    else:
-        key = hashlib.sha1(json.dumps([CACHE_VERSION, res, norm, [(f.name, str(t)) for f, t in pairs]])
-                           .encode()).hexdigest()[:16]
-        d = Path(cache_dir) / f"extra_{res}_{norm}_{key}"
-        d.mkdir(parents=True, exist_ok=True)
-        try:
-            os.close(os.open(d / "lock", os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            owner = True
-        except FileExistsError:
-            owner = False
+    d.mkdir(parents=True, exist_ok=True)
     done = d / "done"
     if not done.exists():
-        if owner:
-            n = len(pairs)
-            log(f"preparing {n} unlabelled images in {d} (free disk {shutil.disk_usage(d).free / 1e9:.0f} GB)")
-            imgs = np.lib.format.open_memmap(d / "imgs.npy", "w+", np.uint8, (n, res, res))
-            tgts = np.lib.format.open_memmap(d / "tgts.npy", "w+", np.uint8, (n, res, res))
-            stats = np.empty((n, 2), np.float32)
-            jobs = [(f, t, res, norm) for f, t in pairs]
-            pool = Pool(workers) if workers > 0 else None
+        if owner is None:
             try:
-                it = pool.imap(_prepare_extra_one, jobs, chunksize=2) if pool else map(_prepare_extra_one, jobs)
-                for k, (im, tg, st) in enumerate(it):
-                    imgs[k], tgts[k], stats[k] = im, tg, st
-            finally:
-                if pool:
-                    pool.close()
-                    pool.join()
-            imgs.flush()
-            tgts.flush()
-            del imgs, tgts
-            np.save(d / "stats.npy", stats)
-            done.write_text(str(n))
+                os.close(os.open(d / "lock", os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+                owner = True
+            except FileExistsError:
+                owner = False
+        if owner:
+            arrs = {n: np.lib.format.open_memmap(d / f"{n}.npy", "w+", dt, shp) for n, (dt, shp) in specs.items()}
+            fill(arrs)
+            for a in arrs.values():
+                a.flush()
+            del arrs
+            done.write_text("ok")
         else:
             log(f"waiting for another process to prepare {d}")
             deadline = time.time() + wait_hours * 3600
@@ -223,9 +205,58 @@ def cached_extra(cache_dir: Path | None, pairs: list[tuple[Path, Path]], res: in
                 if time.time() > deadline:
                     raise TimeoutError(f"{d} was not completed by the process holding its lock")
                 time.sleep(2)
-    arr = {n: np.load(d / f"{n}.npy", mmap_mode="r") for n in ("imgs", "tgts", "stats")}
-    return arr["imgs"], arr["tgts"], np.array(arr["stats"])
+    return {n: np.load(d / f"{n}.npy", mmap_mode="r") for n in specs}
 
+
+def cached_extra(cache_dir: Path | None, pairs: list[tuple[Path, Path]], res: int, workers: int,
+                 norm: str = "global", log=print, wait_hours: float = 3.0):
+    """Images, teacher targets (uint8) and normalisation statistics of unlabelled images.
+
+    Returns ``(imgs, tgts, stats, target_dir)``. The arrays live in memory-mapped ``.npy`` files, so
+    thousands of 2048 px images fit. With ``cache_dir`` set, the images (and their statistics) are
+    shared by every run on the same image list, the targets by runs with the same teacher maps, and
+    one process prepares each set under a lock while concurrent processes (other GPUs) wait.
+    ``target_dir`` can be deleted after training (``--extra-cleanup``) to free disk space.
+    """
+    import hashlib
+    import shutil
+    import tempfile
+
+    def run(fn, jobs, put):
+        pool = Pool(workers) if workers > 0 else None
+        try:
+            for k, out in enumerate(pool.imap(fn, jobs, chunksize=2) if pool else map(fn, jobs)):
+                put(k, out)
+        finally:
+            if pool:
+                pool.close()
+                pool.join()
+
+    n = len(pairs)
+    if cache_dir is None:
+        root, owner = Path(tempfile.mkdtemp(prefix="filseg_extra_")), True
+    else:
+        root, owner = Path(cache_dir), None
+    key_img = hashlib.sha1(json.dumps([CACHE_VERSION, res, norm, [f.name for f, _ in pairs]]).encode()).hexdigest()[:16]
+    key_tgt = hashlib.sha1(json.dumps([CACHE_VERSION, res, [str(t) for _, t in pairs]]).encode()).hexdigest()[:16]
+    d_img, d_tgt = root / f"extra_img_{res}_{norm}_{key_img}", root / f"extra_tgt_{res}_{key_tgt}"
+    root.mkdir(parents=True, exist_ok=True)
+    log(f"unlabelled arrays: {n} images in {d_img}, targets in {d_tgt} (free disk {shutil.disk_usage(root).free / 1e9:.0f} GB)")
+
+    def fill_img(a):
+        def put(k, out):
+            a["imgs"][k], a["stats"][k] = out
+        run(_read_extra_image, [(f, res, norm) for f, _ in pairs], put)
+
+    def fill_tgt(a):
+        def put(k, out):
+            a["tgts"][k] = out
+        run(_read_extra_target, [(t, res) for _, t in pairs], put)
+
+    ia = _locked_memmaps(d_img, {"imgs": (np.uint8, (n, res, res)), "stats": (np.float32, (n, 2))}, fill_img,
+                         owner, log, wait_hours)
+    ta = _locked_memmaps(d_tgt, {"tgts": (np.uint8, (n, res, res))}, fill_tgt, owner, log, wait_hours)
+    return ia["imgs"], ta["tgts"], np.array(ia["stats"]), d_tgt
 
 def _worker_init(_):
     import cv2
@@ -383,6 +414,8 @@ def main(argv=None) -> None:
     ap.add_argument("--extra-targets", type=Path, default=None,
                     help="folder of teacher maps <image stem>.png (scripts/pseudo_label.py)")
     ap.add_argument("--extra-mult", type=int, default=2, help="samples per unlabelled image per epoch")
+    ap.add_argument("--extra-cleanup", action="store_true",
+                    help="delete the cached teacher targets after training (when no other process uses them)")
     args = ap.parse_args(argv)
 
     t_start = time.time()
@@ -427,14 +460,15 @@ def main(argv=None) -> None:
     if device.type == "cuda":
         model = model.to(memory_format=torch.channels_last)
     ds = TrainSet(imgs, tgts, args.crop or args.res, args.epoch_mult, wmaps, stats, idx=tr_idx)
-    n_extra = 0
+    n_extra, extra_tgt_dir = 0, None
     if args.extra_images:
         if wmaps is not None:
             raise SystemExit("--extra-images cannot be combined with --small-weight")
         pairs = extra_pairs(args.extra_images, args.extra_targets)
         if not pairs:
             raise SystemExit(f"no unlabelled image has a teacher map in {args.extra_targets}")
-        e_imgs, e_tgts, e_stats = cached_extra(args.cache_dir, pairs, args.res, args.workers, args.norm, log)
+        e_imgs, e_tgts, e_stats, extra_tgt_dir = cached_extra(args.cache_dir, pairs, args.res, args.workers,
+                                                               args.norm, log)
         ds = torch.utils.data.ConcatDataset(
             [ds, TrainSet(e_imgs, e_tgts, args.crop or args.res, args.extra_mult, None, e_stats)])
         n_extra = len(pairs)
@@ -552,6 +586,11 @@ def main(argv=None) -> None:
     model.eval()
     del dl, ds  # release the training arrays (and loader workers) before the final evaluation
     gc.collect()
+    if args.extra_cleanup and extra_tgt_dir is not None:
+        import shutil
+
+        shutil.rmtree(extra_tgt_dir, ignore_errors=True)
+        log(f"removed cached teacher targets {extra_tgt_dir}")
     save_checkpoint(model, args.out / "model.pt", arch=args.arch, encoder=args.encoder, res=args.res,
                     norm=args.norm, fold=args.fold, epochs=args.epochs, ema=args.ema)
 

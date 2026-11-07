@@ -433,10 +433,17 @@ def test_extra_pairs_and_concurrent_cache(tmp_path):
     pairs = extra_pairs([str(img_dir / "*.jpeg")], tgt_dir)
     assert [p[0].stem for p in pairs] == ["im0", "im1"]
     logs = []
-    with ThreadPoolExecutor(2) as ex:  # two concurrent "processes": one prepares, the other waits
+    with ThreadPoolExecutor(2) as ex:  # two concurrent "processes": one prepares each set, the other waits
         outs = list(ex.map(lambda _: cached_extra(tmp_path / "cache", pairs, 32, 0, "global", logs.append), range(2)))
-    assert sum("preparing" in m for m in logs) == 1
-    for imgs, tgts, stats in outs:
+    for imgs, tgts, stats, tdir in outs:
         assert imgs.shape == (2, 32, 32) and tgts.shape == (2, 32, 32) and stats.shape == (2, 2)
         assert tgts[0].mean() == pytest.approx(40, abs=1) and tgts[1].mean() == pytest.approx(80, abs=1)
-    assert np.array_equal(outs[0][0], outs[1][0])
+    assert np.array_equal(outs[0][0], outs[1][0]) and outs[0][3] == outs[1][3]
+    # another teacher (other target folder): images are shared, targets are separate
+    tgt2 = tmp_path / "tgt2"
+    tgt2.mkdir()
+    for k in range(2):
+        cv2.imwrite(str(tgt2 / f"im{k}.png"), np.full((64, 64), 200, np.uint8))
+    imgs2, tgts2, _, tdir2 = cached_extra(tmp_path / "cache", extra_pairs([str(img_dir / "*.jpeg")], tgt2), 32, 0)
+    assert tdir2 != outs[0][3] and tgts2.mean() == pytest.approx(200, abs=1)
+    assert len(list((tmp_path / "cache").glob("extra_img_*"))) == 1
