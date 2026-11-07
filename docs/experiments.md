@@ -127,3 +127,12 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   of the filaments are matched (IoU > 0.5) by another annotator; the ensemble matches 81.5 % of those vs
   32.2 % of the single-annotator ones. Recall by area: < 300 px 0.26, 300-600 0.46, 600-1200 0.64,
   1200-2500 0.69, 2500-5000 0.70, > 5000 0.68.
+* Headroom of smarter instance formation (11-08, oracle on fold 0 of the final ensemble maps; candidates =
+  connected components of p > t for several t, nested across levels, each scored exactly; oracle = selection
+  with the true matched IoU, PQ ratio maximised by Dinkelbach iterations with a tree DP over the nesting):
+  best single level 0.528 (t = 0.3); best antichain over levels 0.15-0.5 (all redrawn at 0.5, i.e. only
+  *grouping* differs) 0.531 (+0.003); over levels 0.3-0.7 (outlines tighten above 0.5, i.e. the oracle
+  picks each component's *extent*) 0.540 (+0.012). Even perfect fragment grouping gains little; the larger
+  headroom is the per-component outline, which decides whether borderline matches cross IoU 0.5. A global
+  tighter outline does not capture it (final configuration, all 707 OOF images: outline 0.45 / 0.5 / 0.55 /
+  0.6 / 0.65 -> PQ 0.4612 / 0.4620 / 0.4623 / 0.4617 / 0.4614, in-sample for the filter); not pursued further.
