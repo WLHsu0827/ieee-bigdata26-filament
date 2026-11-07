@@ -32,24 +32,35 @@ image, and writes `submission.csv` in the competition format.
 | 1. pre-processing | 2048 x 2048 grey JPEG | resized, normalised image | `filseg.model.predict_images` |
 | 2. segmentation network(s) | image | per-pixel filament probability (consensus of annotators) | `filseg.model` |
 | 3. ensembling + TTA | probabilities of each model / flip | mean probability, 2048 x 2048 | `filseg.infer.predict_full` |
-| 4. instance extraction | probability map | disjoint filament instances | `filseg.postprocess.instances_from_prob` |
+| 4. instance extraction | probability map | candidate components -> learned filter -> outlines at p > 0.5 | `filseg.postprocess.instances_from_prob` |
 | 5. encoding | instances | COCO RLE rows of `submission.csv` | `filseg.submission` |
 """),
-    ("markdown", "## 1. Setup\n\nSet `DATA_DIR` to the unzipped competition data (`MAGFiLO_1.0_Kaggle_2026`). "
-                 "Install the pinned packages with `pip install -r requirements.txt` if needed."),
-    ("code", """import json, sys, time
+    ("markdown", "## 1. Setup\n\nSet `DATA_DIR` to the unzipped competition data (`MAGFiLO_1.0_Kaggle_2026`; found "
+                 "automatically next to the repository or under `/kaggle/input`). Install the pinned packages with "
+                 "`pip install -r requirements.txt` if needed.\n\n"
+                 "`PROFILE = \"full\"` reproduces the submission with all ten networks; `\"fast\"` uses the five "
+                 "EfficientNetV2-S networks with their own post-processing (about half the inference time, "
+                 "slightly lower out-of-fold PQ; see the table in section 2)."),
+    ("code", """import json, os, sys, time
 from pathlib import Path
+
+PROFILE = os.environ.get("FILSEG_PROFILE", "full")      # "full" (submission) or "fast"
+LIMIT = int(os.environ.get("FILSEG_LIMIT_TEST", "0"))    # > 0: only the first LIMIT test images (quick check)
+SAVE_PROBS = os.environ.get("FILSEG_SAVE_PROBS")         # optional: also save the ensemble probability maps (.npz)
 
 REPO = Path.cwd().resolve().parent if Path.cwd().name == "notebooks" else Path.cwd().resolve()
 sys.path.insert(0, str(REPO))
 
-CANDIDATES = [REPO / "MAGFiLO_1.0_Kaggle_2026", REPO.parent / "MAGFiLO_1.0_Kaggle_2026",
-              Path("/kaggle/input/filament-segmentation-2026/MAGFiLO_1.0_Kaggle_2026")]
-DATA_DIR = next((p for p in CANDIDATES if (p / "test" / "test_images").exists()), CANDIDATES[0])
-WEIGHTS_DIR = REPO / "weights"
-OUT_CSV = REPO / "submission.csv"
+CANDIDATES = [REPO / "MAGFiLO_1.0_Kaggle_2026", REPO.parent / "MAGFiLO_1.0_Kaggle_2026"]
+DATA_DIR = next((p for p in CANDIDATES if (p / "test" / "test_images").exists()), None)
+if DATA_DIR is None:  # $FILSEG_DATA or the competition data mounted under /kaggle/input
+    from filseg.train import find_data_dir
+    DATA_DIR = find_data_dir(None)
+WEIGHTS_DIR = Path(os.environ.get("FILSEG_WEIGHTS", REPO / "weights"))
+OUT_CSV = REPO / ("submission.csv" if PROFILE == "full" else f"submission_{PROFILE}.csv")
 print("repo:", REPO)
-print("data:", DATA_DIR, "| exists:", DATA_DIR.exists())"""),
+print("data:", DATA_DIR, "| exists:", DATA_DIR.exists())
+print("profile:", PROFILE, "| test images:", LIMIT or "all")"""),
     ("code", """import numpy as np
 import pandas as pd
 import torch
@@ -60,18 +71,38 @@ from filseg.postprocess import PostConfig
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("torch", torch.__version__, "| device:", device)"""),
-    ("markdown", "## 2. Trained models and post-processing configuration"),
+    ("markdown", """## 2. Trained models and post-processing configuration
+
+| profile | networks | out-of-fold PQ (nested CV, 707 images) | T4 GPU time per image |
+|---|---|---|---|
+| `full` | 5 x U-Net ResNet34 + 5 x U-Net EfficientNetV2-S (one per CV fold) | 0.447 | ~12.8 s networks + ~0.5 s post-processing |
+| `fast` | 5 x U-Net EfficientNetV2-S | 0.444 | ~7.1 s + ~0.5 s |
+
+Post-processing: threshold, connected components, a learned component filter (gradient-boosted
+trees on per-component features, stored as JSON in the manifest) and redrawing of each kept
+instance at probability 0.5."""),
     ("code", """manifest = json.loads((WEIGHTS_DIR / "manifest.json").read_text())
-cfg = PostConfig(**manifest["post"])
-weight_files = [WEIGHTS_DIR / m["file"] for m in manifest["models"]]
+if PROFILE == "fast":
+    entries = [m for m in manifest["models"] if m["file"] in manifest["fast"]["models"]]
+    post = manifest["fast"]["post"]
+else:
+    entries, post = manifest["models"], manifest["post"]
+cfg = PostConfig(**post)
+weight_files = [WEIGHTS_DIR / m["file"] for m in entries]
 models = infer.load_models(weight_files, device)
-pd.DataFrame(manifest["models"])"""),
-    ("code", "cfg"),
+pd.DataFrame(entries)[["file", "encoder", "res", "norm", "fold"]]"""),
+    ("code", """summary = {k: v for k, v in post.items() if k != "scorer"}
+if post.get("scorer"):
+    summary["scorer"] = f"{len(post['scorer']['trees'])} trees on {post['scorer']['features']}"
+summary"""),
     ("markdown", "## 3. Inference on the test images -> `submission.csv`"),
     ("code", """test_files = sorted((DATA_DIR / "test" / "test_images").glob("*.jp*g"))
+if LIMIT:
+    test_files = test_files[:LIMIT]
 timing = {}
 t0 = time.time()
-df = infer.make_submission(models, DATA_DIR, cfg, device, tta=manifest.get("tta", 4), timing=timing)
+df = infer.make_submission(models, DATA_DIR, cfg, device, tta=manifest.get("tta", 4), timing=timing, limit=LIMIT,
+                           save_probs=Path(SAVE_PROBS) if SAVE_PROBS else None)
 elapsed = time.time() - t0
 df, report = submission.write(list(df.itertuples(index=False, name=None)), OUT_CSV, {f.stem for f in test_files})
 print(f"{len(test_files)} images, {len(df)} filaments -> {OUT_CSV}")
@@ -114,12 +145,12 @@ from filseg.metrics import Crop
 
 RUN_VALIDATION = False  # set to True to recompute the out-of-fold evaluation from the weights
 train_json = DATA_DIR / "train" / data.TRAIN_JSON
-if RUN_VALIDATION and train_json.exists() and all("fold" in m for m in manifest["models"]):
+if RUN_VALIDATION and train_json.exists() and all("fold" in m for m in entries):
     groups = data.group_by_image(data.load_entries(train_json))
     folds = data.image_folds(list(groups), manifest.get("nfolds", 5), manifest.get("seed", 2026))
     preds, gt = {}, {}
-    for k in sorted({m["fold"] for m in manifest["models"]}):
-        fold_models = [mm for mm, meta in zip(models, manifest["models"]) if meta["fold"] == k]
+    for k in sorted({m["fold"] for m in entries}):
+        fold_models = [mm for mm, meta in zip(models, entries) if meta["fold"] == k]
         ids = [i for i in groups if folds[i] == k]
         images = [data.read_image(DATA_DIR / "train" / "train_images" / groups[i][0].file_name) for i in ids]
         for i, p in zip(ids, infer.predict_full(fold_models, images, device, tta=manifest.get("tta", 4))):

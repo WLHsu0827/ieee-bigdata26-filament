@@ -15,3 +15,5 @@ kaggle.json
 *.pfx
 *.p12
 .env
+# notebook outputs
+/submission*.csv

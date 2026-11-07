@@ -50,17 +50,19 @@ def predict_full(models: list[tuple[torch.nn.Module, int, str]], images: list[np
 
 def make_submission(models, data_dir: Path, cfg: PostConfig, device: torch.device,
                     tta: int = 4, batch: int = 4, chunk: int = 8, save_probs: Path | None = None,
-                    timing: dict | None = None) -> pd.DataFrame:
+                    timing: dict | None = None, limit: int = 0) -> pd.DataFrame:
     """Predict all test images and return the submission frame.
 
     ``save_probs``: also store the ensemble probability maps (uint8, x255, 2048 px) as an
     ``.npz`` file so other post-processing rules can be applied without re-running the networks
     (``scripts/ensemble_submit.py``). ``timing``: filled with seconds per image (network,
-    post-processing).
+    post-processing). ``limit`` > 0 predicts only the first ``limit`` test images (quick checks).
     """
     import time
 
     files = sorted((data_dir / "test" / "test_images").glob("*.jp*g"))
+    if limit:
+        files = files[:limit]
     rows, maps = [], {}
     t_net = t_post = 0.0
     for s in range(0, len(files), chunk):

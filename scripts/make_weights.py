@@ -51,6 +51,9 @@ def main() -> None:
     ap.add_argument("--post", type=Path, required=True, help="post-processing JSON (PostConfig fields)")
     ap.add_argument("--tta", type=int, default=4)
     ap.add_argument("--out", type=Path, default=Path("weights"))
+    ap.add_argument("--fast-post", type=Path, default=None,
+                    help="post-processing JSON of the faster profile (subset of the models, --fast-encoder)")
+    ap.add_argument("--fast-encoder", default="tu-tf_efficientnetv2_s")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -68,6 +71,11 @@ def main() -> None:
         print(f"{run} -> {name} ({(args.out / name).stat().st_size / 1e6:.1f} MB)")
     manifest = {"post": json.loads(args.post.read_text()), "tta": args.tta, "nfolds": 5, "seed": 2026,
                 "models": models}
+    if args.fast_post is not None:
+        files = [m["file"] for m in models if m["encoder"] == args.fast_encoder]
+        if not files:
+            raise SystemExit(f"no model with encoder {args.fast_encoder} for the fast profile")
+        manifest["fast"] = {"models": files, "post": json.loads(args.fast_post.read_text())}
     (args.out / "manifest.json").write_text(json.dumps(manifest, indent=1))
     print(f"wrote {args.out / 'manifest.json'} with {len(models)} models")
 
