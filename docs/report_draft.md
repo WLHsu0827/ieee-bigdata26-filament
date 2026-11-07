@@ -17,8 +17,9 @@ annotators, (ii) recover instances as connected components, which is lossless
 for this data set because annotated filaments practically never touch, and
 (iii) select instances with a rule derived from an exact per-component
 decomposition of PQ and chosen by nested cross-validation. An ensemble of
-ResNet34 and EfficientNetV2-S U-Nets reaches an out-of-fold PQ of `[TBD]`
-(human agreement 0.34) at `[TBD]` s per image on one T4 GPU.
+ResNet34 and EfficientNetV2-S U-Nets with a learned component filter reaches a
+nested out-of-fold PQ of 0.447 (human agreement 0.34) at 8.5 s per image on one
+T4 GPU; five EfficientNetV2-S networks alone reach 0.444 at 5.3 s per image.
 
 ## 1. Data and label analysis
 
@@ -96,16 +97,26 @@ ResNet34 and EfficientNetV2-S U-Nets reaches an out-of-fold PQ of `[TBD]`
   detection threshold hurts; shrinking to 0.45-0.5 gains a little. Because
   shrinking acts on each component independently, the PQ decomposition stays
   exact and the outline level is part of the nested selection.
-* **Semi-supervised training (disclosure; numbers [TBD] after the pilot).** 1,200 unlabelled GONG H-alpha
-  images from the public NSO/NISP archive (the same JPEG product as the competition images, with the
-  archive's text overlays removed by zeroing everything outside the inscribed circle), taken on days at
-  least two days away from every competition train and test image. `docs/external_gong_manifest.csv`
-  lists each file (URL, date, SHA-256 of the original and of the processed file);
-  `scripts/check_external.py` verifies the date gap and that the processing reproduces every file byte
-  for byte. No labels or other metadata are used. For CV fold k the teacher is the fold's own pair of
-  models (never trained on fold k's validation images); its flip-averaged probability maps are the
-  soft targets of the unlabelled images, mixed 1:1 per epoch with the labelled crops; the student has
-  the same architecture, budget and augmentation as the teacher.
+* **Learned component filter.** The keep decision is finally made by gradient-boosted
+  regression trees (scikit-learn, 200 trees of at most 15 leaves) that predict each
+  candidate's per-entry matched IoU from 12 features (log area, mean / peak / 90th
+  percentile / standard deviation of the probability, elongation, length, width, bounding-box
+  fill ratio, distance from the disk centre, number of candidates in the image and area rank),
+  trained on the out-of-fold candidates of all 707 training images; a candidate is kept if
+  the prediction exceeds a threshold chosen on grouped out-of-fold predictions (the PQ/2
+  criterion above, estimated). Nested PQ 0.447 vs 0.443 for the best three-parameter rule on
+  the same candidates. The trees are exported to JSON (`filseg/scorer.py`), so inference needs
+  only numpy.
+* **Semi-supervised training (tested, not used).** We also tried noisy-student training with
+  1,200 unlabelled GONG H-alpha images from the public NSO/NISP archive (the same JPEG product
+  as the competition images, with the archive's text overlays removed by zeroing everything
+  outside the inscribed circle), taken on days at least two days away from every competition
+  train and test image (`docs/external_gong_manifest.csv` lists URL, date and SHA-256 of every
+  file; `scripts/check_external.py` verifies the date gap and the byte-exact processing). For
+  CV fold 0 the teacher was the fold's own pair of models; students of both architectures
+  trained on labelled + pseudo-labelled crops (1:1) with the teachers' compute budget were
+  slightly *worse* (nested fold-0 PQ 0.443 / 0.438 vs 0.445 / 0.442) and did not improve the
+  ensemble, so the final models use the competition images only.
 * **Robust selection objective.** Besides plain PQ we optimise the expected PQ
   when each ground-truth filament is labelled only with probability r
   (PQ_r = r S / (r TP + FP/2 + (1-r) TP/2 + r FN/2)); r < 1 penalises marginal
@@ -121,9 +132,20 @@ ResNet34 and EfficientNetV2-S U-Nets reaches an out-of-fold PQ of `[TBD]`
 | classical darkness threshold | 2048 | 0.092 | - | 0.07 |
 | U-Net ResNet34 | 512 (full disk) | 0.365 | - | 0.30 |
 | U-Net ResNet34 | 1024 (full disk) | 0.416 (nested over 5 sub-folds: 0.417; robust objective 0.425) | - | 0.34 |
-| U-Net ResNet34, disk norm | 2048 (crops) | [TBD] | [TBD] | [TBD] |
-| U-Net EfficientNetV2-S, disk norm | 2048 (crops) | [TBD] | [TBD] | [TBD] |
-| ensemble 2 x 5 folds | 2048 | - | [TBD] | [TBD] |
+| U-Net ResNet34, disk norm | 2048 (768 crops) | 0.428 (mean of 5 folds 0.422) | 5 folds: 0.432 | - |
+| U-Net EfficientNetV2-S, disk norm | 2048 (768 crops) | 0.438 (mean of 5 folds 0.432) | 5 folds: 0.440 (rule) / 0.444 (learned filter) | [TBD] |
+| ensemble 2 x 5 folds | 2048 | - | 0.442 (rule) / **0.447** (learned filter) | 0.38 (rule, plain PQ) / 0.39 (rule, r = 0.77) / [TBD] (learned filter) |
+
+(Fold-0 and fold-mean numbers use one fixed rule; "nested" numbers are pooled over the outer
+folds of a nested cross-validation of the post-processing on all 707 out-of-fold images.)
+
+* Error profile of the final ensemble (707 out-of-fold images, 8,199 GT filaments of 1,154
+  annotator sets): 63 % matched, SQ 0.68. Of the unmatched GT filaments 58 % have no
+  overlapping prediction (mostly small, faint or drawn by one annotator only; for the 1024 px
+  model, 74 % of the filaments another annotator also drew were matched but only 31 % of the
+  single-annotator ones), 16 % are covered by less than half, 11 % by a too-large and 10 % by a merged
+  prediction, and 5 % are fragmented. Removing all isolated false positives would give PQ
+  0.476 and perfect fragment grouping 0.461 (upper bounds).
 
 * Public LB vs validation: the model predicts as many filaments per test image
   as per validation image (6.1 vs 6.6), yet the public score is ~0.82 of the
@@ -134,11 +156,19 @@ ResNet34 and EfficientNetV2-S U-Nets reaches an out-of-fold PQ of `[TBD]`
   "Unidentifiable" class (34 % of the training filaments; predicts 0.367 / 0.311
   vs public 0.34 / 0.30, a worse fit). We do not tune on the public LB; the
   sparse-label view motivates the robust selection objective above.
-* Efficiency: [TBD] s per image (network) + [TBD] s (post-processing) on one T4.
+* Efficiency (end to end, measured by executing the pipeline notebook on one T4 GPU for the
+  180 test images): full ensemble 8.0 s (networks, flip TTA x4) + 0.5 s (post-processing) per
+  image; five EfficientNetV2-S networks 4.8 s + 0.5 s; a single network about 1.4 s + 0.5 s.
 
 ## 5. Conclusion
 
-[TBD]
+Native-resolution U-Nets trained on the soft consensus of the annotators, connected
+components and a PQ-aware, cross-validated instance filter give an out-of-fold PQ of 0.447,
+well above the agreement between two human annotators (0.34). The decisive steps were the
+full 2048 px resolution (+0.05 over 512 px), exact component-level evaluation of the metric
+(which turns post-processing into a cheap, honest nested-CV problem) and conservative
+selection. Remaining errors are dominated by small, faint filaments on which annotators
+disagree. [to be finalised]
 
 ## Acknowledgement (required text, from the competition's Acknowledgment page)
 
