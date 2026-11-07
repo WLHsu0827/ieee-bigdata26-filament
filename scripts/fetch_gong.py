@@ -34,6 +34,10 @@ from filseg.train import find_data_dir  # noqa: E402
 
 BASE = "https://gong2.nso.edu/HA/hag"
 NAME_RE = re.compile(r'href="(\d{14}[A-Z]h)\.jpg"')
+# server-side filter of the day listing (Apache mod_autoindex): only images taken at minute 00, i.e. about one per
+# hour and site -- a few KB instead of ~1 MB per day, which keeps the load on the public archive low
+HOURLY = "?P=" + "%3F" * 10 + "00" + "%3F" * 3 + "h.jpg"
+SITES = set("BCLMTU")  # the six GONG sites of the competition images
 UA = "filseg-research/1.0 (solar filament segmentation; unlabelled images for semi-supervised training)"
 SIZE = 2048
 
@@ -90,7 +94,8 @@ def fetch_day(day: dt.date, ranges: dict, out_dir: Path, seed: int, tries: int =
     rng = random.Random(f"{seed}-{day.isoformat()}")
     folder = f"{BASE}/{day:%Y%m}/{day:%Y%m%d}/"
     try:
-        names = sorted(set(NAME_RE.findall(get(folder).decode("utf-8", "replace"))))
+        names = sorted(n for n in set(NAME_RE.findall(get(folder + HOURLY).decode("utf-8", "replace")))
+                       if n[14] in SITES)
     except Exception:
         return None
     rng.shuffle(names)
