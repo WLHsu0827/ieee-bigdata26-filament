@@ -71,3 +71,7 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   positives 0.443 (+0.016). Detection of unmarked / faint filaments (and annotator disagreement)
   dominates; fragment grouping is the largest *post-processing* headroom but distance-based merging
   realises almost none of it (+0.001).
+* Lower detection thresholds (11-07; detect at 0.2 / 0.25, i.e. join fragments through weak bridges, and redraw
+  kept instances at 0.45 / 0.5): nested PQ on E1 0.419 (plain-PQ objective; t = 0.25 chosen in 4 / 5 outer folds)
+  and 0.424 (r = 0.77; same final rule as before: t 0.30, area >= 400, mean >= 0.8, outline 0.5) vs 0.417 / 0.425
+  with thresholds >= 0.3 -- within noise. t = 0.25 is added to the K1 selection grid.
