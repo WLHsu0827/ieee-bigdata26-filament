@@ -72,7 +72,7 @@ def make_submission(models, data_dir: Path, cfg: PostConfig, device: torch.devic
         t1 = time.time()
         for f, p in zip(part, probs):
             if save_probs is not None:
-                maps[f.stem] = np.round(np.clip(p, 0, 1) * 255).astype(np.uint8)
+                maps[f.stem] = np.round(np.clip(np.nan_to_num(p, nan=0.0), 0, 1) * 255).astype(np.uint8)
             lab, _ = instances_from_prob(p, cfg)
             rows += submission.rows_from_label(f.stem, lab)
         t_net, t_post = t_net + t1 - t0, t_post + time.time() - t1

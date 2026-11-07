@@ -82,7 +82,12 @@ def predict_batch(model: torch.nn.Module, x: torch.Tensor, tta: int = 4) -> torc
     for k, f in ops:
         xi = torch.rot90(x, k, (2, 3)) if k else x
         xi = torch.flip(xi, f) if f else xi
-        p = torch.sigmoid(model(xi).float())
+        logits = model(xi).float()
+        if not torch.isfinite(logits).all():
+            # half-precision overflow inside the network (rare, EfficientNetV2 under autocast): redo this pass in fp32
+            with torch.autocast(device_type=xi.device.type, enabled=False):
+                logits = model(xi.float()).float()
+        p = torch.sigmoid(logits)
         p = torch.flip(p, f) if f else p
         p = torch.rot90(p, -k, (2, 3)) if k else p
         acc = p if acc is None else acc + p

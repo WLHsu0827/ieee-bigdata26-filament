@@ -489,3 +489,22 @@ def test_scorer_export_matches_sklearn_and_filters_components():
     lab, stats = instances_from_prob(prob, PostConfig(threshold=0.5, scorer=spec, min_score=0.5, mask_threshold=0.7))
     assert lab.max() == 1 and lab[105, 105] == 1 and lab[210, 40] == 0
     assert len(component_features(prob, lab)) == 1
+
+
+def test_predict_batch_recomputes_non_finite_passes_in_fp32():
+    import torch
+
+    from filseg.model import predict_batch
+
+    class OverflowUnderAutocast(torch.nn.Module):
+        def forward(self, x):
+            try:
+                amp = torch.is_autocast_enabled(x.device.type)
+            except TypeError:  # older torch
+                amp = torch.is_autocast_cpu_enabled()
+            return torch.full_like(x, float("nan")) if amp else torch.zeros_like(x)
+
+    x = torch.zeros(1, 1, 8, 8)
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16, enabled=True):
+        p = predict_batch(OverflowUnderAutocast(), x, tta=2)
+    assert torch.isfinite(p).all() and torch.allclose(p, torch.full_like(p, 0.5))
