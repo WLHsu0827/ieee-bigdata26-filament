@@ -146,9 +146,9 @@ folds of a nested cross-validation of the post-processing on all 707 out-of-fold
   network sees them but the filter drops them). On images with several annotators the ensemble
   (learned filter) matches 82 % of the filaments that another annotator also drew but only 32 %
   of those drawn by a single annotator, so the remaining error is largely annotator
-  disagreement. 16 % of the unmatched GT filaments are covered by less than half, 11 % by a too-large and 10 % by a merged
-  prediction, and 5 % are fragmented. Removing all isolated false positives would give PQ
-  0.476 and perfect fragment grouping 0.461 (upper bounds).
+  disagreement. 13 % of the unmatched GT filaments are covered by less than half, 10 % by a
+  too-large and 9 % by a merged prediction, and 4 % are fragmented. Removing all isolated false
+  positives would give PQ 0.479 and perfect fragment grouping 0.475 (upper bounds).
 
 * Public LB vs validation: the model predicts as many filaments per test image
   as per validation image (6.1 vs 6.6), yet the public score is ~0.82 of the
