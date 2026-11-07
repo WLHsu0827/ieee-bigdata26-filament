@@ -79,10 +79,10 @@ python scripts/make_weights.py --runs runs/*/fold* --post runs/sel/post_selected
 | `filseg/train.py`, `filseg/cv.py` | training (EMA, OOM fallback, time budget), CV driver |
 | `filseg/postprocess.py`, `filseg/tune.py` | probability map -> instances; post-processing scoring |
 | `filseg/components.py` | per-component PQ decomposition, nested rule selection |
-| `filseg/analysis.py` | error analysis (by size, aggregation, matching degrees) |
+| `filseg/analysis.py` | error analysis (by size, aggregation, matching degrees, error causes with PQ upper bounds) |
 | `filseg/infer.py` | inference / ensembling from saved weights |
 | `filseg/classical.py` | traditional (non-learning) darkness-threshold baseline |
-| `scripts/` | label agreement, OOF analysis, rule selection, ensembling, figures, checks |
+| `scripts/` | label agreement, OOF analysis, rule selection, model comparison, ensembling, figures, checks; optional semi-supervised tools (`fetch_gong.py` unlabelled archive images, `pseudo_label.py` teacher maps, `chain.py`) |
 | `configs/` | post-processing configurations |
 | `kaggle/` | builders for self-contained Kaggle kernels and Colab notebooks |
 | `tests/` | unit tests (`python -m pytest tests`) |
@@ -92,4 +92,7 @@ python scripts/make_weights.py --runs runs/*/fold* --post runs/sel/post_selected
 The MAGFiLO images and annotations are provided by the competition organisers
 (GONG data courtesy of NSO/AURA/NSF) and are **not** redistributed here.
 Training uses only the competition's training annotations; inference uses only
-the test H-alpha images. Code is released under the MIT licence.
+the test H-alpha images. The optional semi-supervised experiments additionally use
+*unlabelled* GONG H-alpha images from the public NSO archive, taken on days at least
+two days away from every competition image (`scripts/fetch_gong.py`; images are fetched,
+not redistributed). Code is released under the MIT licence.
