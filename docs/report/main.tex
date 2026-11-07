@@ -1,0 +1,197 @@
+% Technical report for the IEEE BigData Cup 2026 Solar Filament Segmentation Challenge.
+% Draft in IEEEtran conference format; to be transferred into the official Overleaf template.
+\documentclass[conference]{IEEEtran}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{url}
+\graphicspath{{../figures/}}
+
+\begin{document}
+
+\title{Consensus-Trained Full-Resolution U-Nets with\\PQ-Aware Instance Selection for Solar Filament Segmentation}
+
+\author{\IEEEauthorblockN{[Author name]}
+\IEEEauthorblockA{[Affiliation, e-mail]}}
+
+\maketitle
+
+\begin{abstract}
+We segment individual solar filaments in GONG H-alpha full-disk images (MAGFiLO). An analysis of
+the multi-annotator training set shows that two experts agree at a Panoptic Quality (PQ) of only
+0.34, so annotator style dominates the metric. We therefore train U-Nets at the native
+$2048\times2048$ resolution on the soft consensus of all annotators, form instances as connected
+components (lossless here, because annotated filaments practically never touch), and select
+instances with the help of an exact per-component decomposition of PQ: the post-processing is
+chosen by nested cross-validation and the final keep decision is made by a small learned
+component filter. Ten networks (ResNet34 and EfficientNetV2-S encoders, five folds each) reach a
+nested out-of-fold PQ of 0.447 at 8.5\,s per image on one T4 GPU; five EfficientNetV2-S networks
+alone reach 0.444 at 5.3\,s. Code, weights and a notebook that reproduces the submission without
+re-training are provided in the accompanying repository.
+\end{abstract}
+
+\section{Introduction}
+Filaments are dense clouds of chromospheric material held by magnetic fields; their eruptions are
+at the core of coronal mass ejections and flares. The challenge asks for one mask per filament in
+GONG \cite{harvey1996gong} H-alpha observations annotated in MAGFiLO \cite{magfilo2024}. Predictions
+are ranked by PQ \cite{kirillov2019panoptic}: a predicted and an annotated filament match if their
+intersection-over-union (IoU) exceeds 0.5, $\mathrm{PQ}=\sum_{\mathrm{TP}}\mathrm{IoU}/(|\mathrm{TP}|+\tfrac12|\mathrm{FP}|+\tfrac12|\mathrm{FN}|)$,
+and every annotator's set of polygons is scored separately with counts pooled over the test set.
+Our contributions are (i) a label analysis that sets realistic targets, (ii) native-resolution
+consensus training, (iii) an exact decomposition of PQ over predicted components that makes honest
+(nested) selection of the post-processing cheap, and (iv) a learned PQ-aware component filter that
+needs only numpy at inference.
+
+\section{Data and label analysis}
+The training set has 707 observations from six GONG sites (2011--2022) with 1,154 annotator sets
+and 8,199 filament polygons (411 images with one annotator, 145 with two, 151 with three); the test
+set has 180 observations. Filament areas range from 9 to 37,739\,px (median 1,228\,px).
+\textbf{Instances do not touch:} the 8,199 polygons form 8,219 connected components of their
+per-annotator unions, so instance segmentation reduces to semantic segmentation followed by
+connected components. \textbf{Annotators disagree:} scoring one annotator against another gives
+PQ 0.340 (SQ 0.634, RQ 0.536) on the 296 multi-annotator images, and the union or intersection of
+two annotators predicts a third no better (0.332 / 0.314). An oracle that outputs the consensus of
+all annotators (including the scored one) reaches 0.648. Annotator style---tight or loose outlines,
+inclusion of faint filaments, splitting of filament chains---therefore dominates the metric, and a
+model can at best predict what annotators agree on.
+
+\section{Method}
+Fig.~\ref{fig:pipeline} summarises the pipeline.
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{pipeline.png}
+\caption{Pipeline: inputs, processing blocks and the key intermediate signals.}
+\label{fig:pipeline}
+\end{figure*}
+
+\textbf{Input and target.} One grey channel at full resolution, normalised by the mean and standard
+deviation of the pixels inside the solar disk, which removes exposure differences between sites.
+The target is the soft consensus: the fraction of an image's annotators that cover each pixel, so
+the network output estimates the probability that an annotator draws the pixel.
+
+\textbf{Networks and training.} U-Nets \cite{ronneberger2015unet} (segmentation-models-pytorch
+\cite{smp}) with ImageNet-pretrained ResNet34 \cite{he2016resnet} or EfficientNetV2-S
+\cite{tan2021efficientnetv2,timm} encoders, trained on $768\times768$ crops of the $2048$\,px image
+(70\,\% centred on a filament pixel; arbitrary rotation, scaling 0.9--1.1, flips, gamma, contrast,
+blur and noise), with BCE plus soft Dice, AdamW (lr $3\cdot10^{-4}$, weight decay $10^{-4}$), warm-up
+and cosine decay, mixed precision and an exponential moving average of the weights (decay 0.999 with
+warm-up). Five folds grouped by image, 1.3--1.5\,h per fold on one T4 GPU.
+
+\textbf{Inference.} Each network predicts the full image with flip test-time augmentation
+($\times4$); the ten fold networks are averaged.
+
+\textbf{Instances and an exact decomposition of PQ.} Instances are the 8-connected components of the
+thresholded map after hole filling. Because predicted instances are disjoint, a component $c$ matches
+at most one filament per annotator set, and with $v_c=\sum_{e\in E(c)}\mathrm{IoU}_e(c)\,[\mathrm{IoU}_e(c)>0.5]$
+over the $|E(c)|$ annotator sets of its image,
+\begin{equation}
+\mathrm{PQ}(K)=\frac{\sum_{c\in K}v_c}{\tfrac12\sum_{c\in K}|E(c)|+\tfrac12 G}
+\end{equation}
+for a kept set $K$ and $G$ annotated filaments. Keeping $c$ improves PQ iff $v_c/|E(c)|>\mathrm{PQ}/2$:
+at PQ $\approx0.45$ a candidate is worth keeping if it has roughly a 33\,\% chance of matching an
+annotator. Candidate components and their $v_c$ are computed once per \emph{shape} (detection
+threshold, closing, outline level); any \emph{selection} is then scored exactly and instantly, which
+makes nested cross-validation of the post-processing cheap (unit-tested against the official code).
+
+\textbf{Selection.} The shape and a rule (minimum area, mean and peak probability) are chosen by nested
+cross-validation on all 707 out-of-fold maps: for each outer fold the best choice on the other four
+folds is applied to it, and the pooled counts give an unbiased estimate. Detection and extent are
+decoupled: components are detected at a low threshold (0.25--0.3), and each kept instance is redrawn
+where the probability exceeds 0.5. As objective we use plain PQ and a robust variant that assumes each
+filament is labelled only with probability $r$,
+$\mathrm{PQ}_r=rS/(r\,\mathrm{TP}+\tfrac12\mathrm{FP}+\tfrac12(1-r)\mathrm{TP}+\tfrac12 r\,\mathrm{FN})$,
+which penalises marginal detections more ($r=0.77$).
+
+\textbf{Learned component filter.} The final keep decision is made by gradient-boosted regression trees
+(200 trees, at most 15 leaves) that predict $v_c/|E(c)|$ from 12 features of each candidate: log area,
+mean, peak, 90th percentile and standard deviation of the probability, elongation, length, width,
+bounding-box fill ratio, distance from the disk centre, number of candidates in the image and area
+rank. A candidate is kept if its prediction exceeds a threshold chosen on grouped out-of-fold
+predictions. The trees are exported to JSON, so inference needs only numpy.
+
+\section{Experiments}
+\begin{table}[t]
+\caption{PQ on the training images (fold 0 / mean of five folds with one fixed rule; nested CV over
+all 707 out-of-fold images) and public leaderboard (LB, about half of the test set).}
+\label{tab:results}
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lccc}
+\toprule
+model & fold 0 / mean & nested & LB\\
+\midrule
+classical darkness threshold & 0.092 & -- & 0.07\\
+U-Net R34, 512\,px full disk & 0.365 & -- & 0.30\\
+U-Net R34, 1024\,px full disk & 0.416 & 0.425$^a$ & 0.35\\
+U-Net R34, 2048\,px (5 folds) & 0.428 / 0.422 & 0.432 & --\\
+U-Net EffV2-S, 2048\,px (5 folds) & 0.438 / 0.432 & 0.440 & --\\
+\quad + learned filter (\emph{fast}) & -- & 0.444 & [TBD]\\
+R34 + EffV2-S, 10 networks, rule & -- & 0.442 & 0.39$^b$\\
+\quad + learned filter (\emph{full}) & -- & \textbf{0.447} & [TBD]\\
+\midrule
+human annotator vs.\ annotator & \multicolumn{2}{c}{0.340} & --\\
+\bottomrule
+\end{tabular}\\[2pt]
+\footnotesize{$^a$nested over five sub-folds of fold 0. $^b$robust objective $r=0.77$; plain PQ: 0.38.}
+\end{table}
+
+\textbf{Resolution and encoders.} Table~\ref{tab:results} shows that native resolution matters
+($+0.05$ from 512 to 1024\,px, $+0.01$ to 2048\,px) and that EfficientNetV2-S beats ResNet34 by
+0.01 per fold. Combining both encoders adds 0.002 over five EfficientNetV2-S networks; the learned
+filter adds another 0.004--0.005 over the best rule on the same candidates.
+
+\textbf{Error analysis.} Fig.~\ref{fig:eval} shows the quantities used by the organisers. The final
+ensemble matches 62\,\% of the annotated filaments (SQ 0.68). On images with several annotators it
+matches 82\,\% of the filaments that another annotator also drew, but only 32\,\% of those drawn by a
+single annotator. Of the filaments without any overlapping prediction (25\,\%), 71\,\% are smaller
+than 1,200\,px and 74\,\% contain probabilities above 0.5---the network sees them, but keeping them
+would cost more false positives than it gains. Fragmentation and merging are rare (one-to-many and
+many-to-one relations in Fig.~\ref{fig:eval}). Even an oracle that groups fragments optimally across
+detection levels would gain only 0.003 PQ, whereas an oracle choosing each component's outline would
+gain 0.012: the remaining errors are mostly faint, small or annotator-specific filaments and outlines
+that decide whether a match crosses IoU 0.5.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{evaluation.png}
+\caption{Out-of-fold evaluation of the final configuration (707 images, 1,154 annotator sets): IoU and
+Dice of overlapping pairs, one-to-many / many-to-one degrees, recall by filament size and error causes.}
+\label{fig:eval}
+\end{figure*}
+
+\textbf{Public leaderboard.} The public score is 0.82--0.88 of the nested validation score for every
+model although the models predict as many filaments per test image as per validation image; the gap is
+consistent with sparser test labels. Stricter selections never transferred worse: the nested rules beat
+the grid-tuned rule of the 1024\,px model (0.35 vs.\ 0.34), and for the ensemble the robust objective beat
+plain PQ (0.39 vs.\ 0.38). We used the leaderboard only to confirm transfer, never to tune.
+
+\textbf{Efficiency and reproducibility.} Executing the pipeline notebook on one T4 GPU for the 180
+test images takes 8.0\,s (ten networks, flip TTA $\times4$) plus 0.5\,s (post-processing) per image;
+the \emph{fast} profile (five networks) takes 4.8\,+\,0.5\,s. The notebook reproduces the submission
+from the stored fp16 weights (agreement PQ 0.998 with the training-time predictions).
+
+\textbf{Negative results.} (i) Noisy-student training \cite{xie2020noisystudent} with 1,200 unlabelled
+GONG archive images taken at least two days away from every competition image (listed with hashes in
+the repository), pseudo-labelled by the fold's own networks, did not help at equal compute (students
+0.443 / 0.438 vs.\ teachers 0.445 / 0.442 on fold 0). (ii) Distance-based merging of nearby
+components, lower detection thresholds and global outline levels other than 0.5 were within noise.
+
+\section{Conclusion}
+Native-resolution U-Nets trained on the annotators' soft consensus, connected components and a
+PQ-aware, cross-validated instance filter reach an out-of-fold PQ of 0.447, well above the agreement
+between two human annotators (0.34). The exact component decomposition of PQ turned post-processing
+into a cheap and honest model-selection problem. The remaining errors are dominated by faint and
+small filaments on which annotators disagree.
+
+\section*{Acknowledgment}
+This work utilizes GONG data obtained by the NSO Integrated Synoptic Program, managed by the National
+Solar Observatory, which is operated by the Association of Universities for Research in Astronomy
+(AURA), Inc. under a cooperative agreement with the National Science Foundation and with contribution
+from the National Oceanic and Atmospheric Administration. The GONG network of instruments is hosted by
+the Big Bear Solar Observatory, High Altitude Observatory, Learmonth Solar Observatory, Udaipur Solar
+Observatory, Instituto de Astrof\'isica de Canarias, and Cerro Tololo Interamerican Observatory.
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}
