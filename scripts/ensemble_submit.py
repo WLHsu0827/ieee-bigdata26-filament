@@ -39,6 +39,7 @@ def main() -> None:
     cfg = PostConfig(**json.loads(args.post.read_text()))
     args.probs = expand(args.probs)
     args.test_dir = find_test_dir(args.test_dir)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
     files = [np.load(p) for p in args.probs]  # lazy: arrays are read per key
     test_ids = sorted(p.stem for p in args.test_dir.glob("*.jp*g"))
     if args.limit:
