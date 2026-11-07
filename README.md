@@ -42,7 +42,8 @@ Experiments and numbers: `docs/experiments.md`. Report draft: `docs/report_draft
 
 ## Reproducing the submission
 
-`notebooks/pipeline.ipynb` runs the whole inference pipeline from the weights
+`notebooks/pipeline.ipynb` (committed with the outputs of a run on a Kaggle T4 GPU) runs the whole
+inference pipeline from the weights
 in `weights/` (no training needed): it predicts every test image, writes
 `submission.csv`, shows predictions and, if the training annotations are
 available, recomputes the hold-out PQ, IoU / Dice distributions and
@@ -58,8 +59,8 @@ end to end on one T4 GPU for the 180 test images (`scripts/run_notebook.py`):
 
 | profile | networks | out-of-fold PQ (nested CV) | time per image |
 |---|---|---|---|
-| `full` (submission) | 5 x ResNet34 + 5 x EfficientNetV2-S U-Nets | 0.447 | 8.5 s |
-| `fast` | 5 x EfficientNetV2-S U-Nets | 0.444 | 5.3 s |
+| `full` (submission) | 5 x ResNet34 + 5 x EfficientNetV2-S U-Nets | 0.447 | 8.0-8.5 s |
+| `fast` | 5 x EfficientNetV2-S U-Nets | 0.444 | 5.2-5.3 s |
 
 ## Training from scratch
 

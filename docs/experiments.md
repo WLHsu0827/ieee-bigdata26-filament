@@ -142,3 +142,10 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   310 too large, 295 merged, 111 fragmented. GT overlapping >= 2 predictions: 2.8 %; predictions overlapping
   >= 2 GT: 2.6 %. Mean IoU / Dice of overlapping pairs 0.606 / 0.736. `docs/evaluation*.json`, figures in
   `docs/figures/evaluation*.png`.
+* Half-precision overflow (11-08): the EfficientNetV2-S networks occasionally produce non-finite logits under
+  fp16 autocast (numpy "invalid value encountered in cast" when saving maps; K1 fold 0 and the first notebook
+  run). `predict_batch` now recomputes such a TTA pass in fp32. Second reproducibility run (fil-nb-verify v2):
+  outputs identical to the first (100 % of instances at IoU > 0.99, i.e. the affected pixels never changed an
+  instance), no warnings; full 7.95 s/image (7.40 + 0.53), fast 5.23 s/image (4.66 + 0.54). The executed
+  notebook of this run is committed as `notebooks/pipeline.ipynb`; the 10 fp16 weights (452 MB, SHA-256 in
+  `weights/manifest.json`) are committed in `weights/`.

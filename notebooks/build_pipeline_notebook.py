@@ -6,6 +6,9 @@ predicted filaments, and (optionally, if the training annotations are present)
 reproduces the hold-out evaluation: Panoptic Quality, IoU / Dice distributions
 and one-to-many / many-to-one statistics.
 
+The committed `notebooks/pipeline.ipynb` additionally contains the outputs of the reproducibility
+run (`scripts/run_notebook.py` on a Kaggle T4); running this builder resets it to an unexecuted copy.
+
 Usage:
     python notebooks/build_pipeline_notebook.py
 """
@@ -35,9 +38,13 @@ image, and writes `submission.csv` in the competition format.
 | 4. instance extraction | probability map | candidate components -> learned filter -> outlines at p > 0.5 | `filseg.postprocess.instances_from_prob` |
 | 5. encoding | instances | COCO RLE rows of `submission.csv` | `filseg.submission` |
 """),
-    ("markdown", "## 1. Setup\n\nSet `DATA_DIR` to the unzipped competition data (`MAGFiLO_1.0_Kaggle_2026`; found "
+    ("markdown", "## 1. Setup
+
+Set `DATA_DIR` to the unzipped competition data (`MAGFiLO_1.0_Kaggle_2026`; found "
                  "automatically next to the repository or under `/kaggle/input`). Install the pinned packages with "
-                 "`pip install -r requirements.txt` if needed.\n\n"
+                 "`pip install -r requirements.txt` if needed.
+
+"
                  "`PROFILE = \"full\"` reproduces the submission with all ten networks; `\"fast\"` uses the five "
                  "EfficientNetV2-S networks with their own post-processing (about half the inference time, "
                  "slightly lower out-of-fold PQ; see the table in section 2)."),
@@ -185,7 +192,8 @@ def main() -> None:
             cell.update(execution_count=None, outputs=[])
         nb["cells"].append(cell)
     out = ROOT / "notebooks" / "pipeline.ipynb"
-    out.write_text(json.dumps(nb, indent=1), encoding="utf-8", newline="\n")
+    out.write_text(json.dumps(nb, indent=1), encoding="utf-8", newline="
+")
     print("wrote", out)
 
 
