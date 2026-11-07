@@ -129,3 +129,29 @@ ResNet34 and EfficientNetV2-S U-Nets reaches an out-of-fold PQ of `[TBD]`
 ## 5. Conclusion
 
 [TBD]
+
+## Acknowledgement (required text, from the competition's Acknowledgment page)
+
+This work utilizes GONG data obtained by the NSO Integrated Synoptic Program, managed by the National
+Solar Observatory, which is operated by the Association of Universities for Research in Astronomy
+(AURA), Inc. under a cooperative agreement with the National Science Foundation and with contribution
+from the National Oceanic and Atmospheric Administration. The GONG network of instruments is hosted by
+the Big Bear Solar Observatory, High Altitude Observatory, Learmonth Solar Observatory, Udaipur Solar
+Observatory, Instituto de Astrofísica de Canarias, and Cerro Tololo Interamerican Observatory.
+
+## References (to be converted to BibTeX)
+
+* MAGFiLO: Manually Annotated GONG Filaments from H-Alpha Observations, Scientific Data (2024),
+  doi:10.1038/s41597-024-03876-y.
+* A. Kirillov, K. He, R. Girshick, C. Rother, P. Dollár. Panoptic Segmentation. CVPR 2019,
+  doi:10.1109/CVPR.2019.00963.
+* O. Ronneberger, P. Fischer, T. Brox. U-Net: Convolutional Networks for Biomedical Image
+  Segmentation. MICCAI 2015.
+* K. He, X. Zhang, S. Ren, J. Sun. Deep Residual Learning for Image Recognition. CVPR 2016.
+* M. Tan, Q. V. Le. EfficientNetV2: Smaller Models and Faster Training. ICML 2021.
+* Q. Xie, M.-T. Luong, E. Hovy, Q. V. Le. Self-training with Noisy Student Improves ImageNet
+  Classification. CVPR 2020 (only if the semi-supervised students are used).
+* G. Hinton, O. Vinyals, J. Dean. Distilling the Knowledge in a Neural Network. arXiv:1503.02531, 2015
+  (only if used).
+* J. W. Harvey et al. The Global Oscillation Network Group (GONG) Project. Science 272, 1284 (1996).
+* P. Iakubovskii. Segmentation Models Pytorch. GitHub, 2019. R. Wightman. PyTorch Image Models. GitHub, 2019.
