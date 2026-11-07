@@ -150,7 +150,16 @@ filaments overlap two or more predictions and 2.6\,\% of the predictions overlap
 (Fig.~\ref{fig:eval}). Even an oracle that groups fragments optimally across
 detection levels would gain only 0.003 PQ, whereas an oracle choosing each component's outline would
 gain 0.012: the remaining errors are mostly faint, small or annotator-specific filaments and outlines
-that decide whether a match crosses IoU 0.5.
+that decide whether a match crosses IoU 0.5 (Fig.~\ref{fig:morph}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{morphology.png}
+\caption{Validation examples (fold 0, final configuration). Top: annotator outlines (one colour per
+annotator); bottom: predicted instances. Left: a match; middle: a filament chain predicted as two
+instances; right: the prediction follows a faint filament beyond the single annotator's outline.}
+\label{fig:morph}
+\end{figure}
 
 \begin{figure*}[t]
 \centering

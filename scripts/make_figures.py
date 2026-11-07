@@ -209,12 +209,62 @@ def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
     return path
 
 
+def morphology(probs_npz: Path, post_json: Path, data_dir: Path, image_ids: list[str],
+               path: Path = FIG / "morphology.png", zoom: int = 520) -> Path:
+    """Compact report figure: one zoom per image around its largest predicted filament, annotator
+    outlines (one colour per annotator) above and predicted instances below."""
+    import json
+
+    import cv2
+    import numpy as np
+
+    from filseg import data
+    from filseg.postprocess import PostConfig, instances_from_prob, upsample
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from analyze_oof import load_probs
+
+    groups = data.group_by_image(data.load_entries(data_dir / "train" / data.TRAIN_JSON))
+    probs = load_probs([Path(p) for p in str(probs_npz).split(",")])
+    cfg = PostConfig(**json.loads(Path(post_json).read_text()))
+    colors = [(255, 60, 60), (60, 220, 60), (60, 140, 255)]
+    palette = [(255, 215, 0), (255, 0, 255), (0, 255, 255), (255, 128, 0), (0, 255, 0), (255, 64, 64)]
+    fig, axes = plt.subplots(2, len(image_ids), figsize=(3.4 * len(image_ids) / 1.5, 4.6))
+    axes = np.atleast_2d(axes).reshape(2, len(image_ids))
+    for col, iid in enumerate(image_ids):
+        img = data.read_image(data_dir / "train" / "train_images" / groups[iid][0].file_name)
+        lab, _ = instances_from_prob(upsample(probs[iid]), cfg)
+        gt_vis = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        for e, c in zip(groups[iid], colors):
+            for poly in e.polygons:
+                cv2.polylines(gt_vis, [np.round(np.array(poly).reshape(-1, 2)).astype(np.int32)], True, c, 3)
+        pred_vis = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        for k in range(1, lab.max() + 1):
+            cnts, _ = cv2.findContours((lab == k).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            cv2.drawContours(pred_vis, cnts, -1, palette[(k - 1) % len(palette)], 3)
+        sizes = np.bincount(lab.ravel())[1:]
+        ys, xs = np.nonzero(lab == 1 + int(np.argmax(sizes))) if len(sizes) else (np.array([1024]), np.array([1024]))
+        y0 = int(np.clip(ys.mean() - zoom // 2, 0, img.shape[0] - zoom))
+        x0 = int(np.clip(xs.mean() - zoom // 2, 0, img.shape[1] - zoom))
+        for row, vis, title in ((0, gt_vis, f"{len(groups[iid])} annotator(s)"), (1, pred_vis, "prediction")):
+            axes[row, col].imshow(vis[y0:y0 + zoom, x0:x0 + zoom])
+            axes[row, col].set_title(title, fontsize=8)
+            axes[row, col].axis("off")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(path, dpi=200)
+    plt.close(fig)
+    return path
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "pipeline"
     if what == "pipeline":
         print(pipeline_diagram())
     elif what == "overlays":  # overlays <val_probs.npz> <post.json> <data_dir> <image_id> [<image_id> ...]
         print(overlays(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), sys.argv[5:]))
+    elif what == "morphology":  # morphology <val_probs.npz[,more.npz]> <post.json> <data_dir> <image_id> [...]
+        print(morphology(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), sys.argv[5:]))
     elif what == "evaluation":  # evaluation <post.json> <gt_crops.pkl | none> <out.png> <val_probs.npz | glob> [...]
         gt_arg = None if sys.argv[3].lower() == "none" else Path(sys.argv[3])
         print(evaluation(sys.argv[5:], Path(sys.argv[2]), gt_arg, Path(sys.argv[4])))
