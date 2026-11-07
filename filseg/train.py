@@ -212,11 +212,14 @@ def loss_fn(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
 
 # ----------------------------------------------------------------------------- io
 def find_data_dir(hint: str | None) -> Path:
+    """The MAGFiLO folder: ``hint``, else ``$FILSEG_DATA``, else found under /kaggle/input."""
     if hint:
         return Path(hint)
+    if os.environ.get("FILSEG_DATA"):
+        return Path(os.environ["FILSEG_DATA"])
     for p in Path("/kaggle/input").rglob(data.TRAIN_JSON):
         return p.parent.parent
-    raise FileNotFoundError("MAGFiLO data directory not found; pass --data")
+    raise FileNotFoundError("MAGFiLO data directory not found; pass --data or set FILSEG_DATA")
 
 
 def write_submission(models, data_dir: Path, res: int, cfg: PostConfig, device, out_csv: Path,

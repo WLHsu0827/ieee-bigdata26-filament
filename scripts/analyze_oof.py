@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from filseg import analysis, components, data  # noqa: E402
 from filseg.metrics import Crop, evaluate  # noqa: E402
 from filseg.postprocess import PostConfig  # noqa: E402
+from filseg.train import find_data_dir  # noqa: E402
 from filseg.tune import Scorer  # noqa: E402
 
 
@@ -56,13 +57,27 @@ def load_probs(paths: list[Path]) -> dict[str, np.ndarray]:
 
 
 def load_gt(args, image_ids: set[str]) -> dict[str, list[Crop]]:
-    if args.gt_cache and args.gt_cache.exists():
-        with open(args.gt_cache, "rb") as f:
+    """Ground-truth crops of the entries of ``image_ids``.
+
+    With ``args.gt_cache`` set, the crops of *all* entries are read from that pickle, or
+    built from the competition data and written there first (so later runs reuse them).
+    """
+    cache = Path(args.gt_cache) if getattr(args, "gt_cache", None) else None
+    if cache is not None and cache.exists():
+        with open(cache, "rb") as f:
             crops = pickle.load(f)
         return {k: v for k, v in crops.items() if k.split("-", 1)[1] in image_ids}
-    data_dir = Path(args.data) if args.data else next(Path("/kaggle/input").rglob(data.TRAIN_JSON)).parent.parent
-    entries = [e for e in data.load_entries(data_dir / "train" / data.TRAIN_JSON) if e.image_id in image_ids]
-    return {e.entry_id: [Crop.from_full(m) for m in e.masks()] for e in entries}
+    data_dir = find_data_dir(args.data)
+    entries = data.load_entries(data_dir / "train" / data.TRAIN_JSON)
+    if cache is None:
+        entries = [e for e in entries if e.image_id in image_ids]
+    crops = {e.entry_id: [Crop.from_full(m) for m in e.masks()] for e in entries}
+    if cache is not None:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        with open(cache.with_suffix(".tmp"), "wb") as f:
+            pickle.dump(crops, f, protocol=pickle.HIGHEST_PROTOCOL)
+        cache.with_suffix(".tmp").replace(cache)
+    return {k: v for k, v in crops.items() if k.split("-", 1)[1] in image_ids}
 
 
 def main() -> None:

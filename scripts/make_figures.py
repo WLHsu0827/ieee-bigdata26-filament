@@ -116,7 +116,6 @@ def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
     IoU and Dice distributions of overlapping pairs, one-to-many / many-to-one matching degrees,
     and recall by filament size. Also writes the numbers to ``<path>.json``."""
     import json
-    import pickle
 
     import numpy as np
 
@@ -134,11 +133,7 @@ def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
     from cli_utils import expand
 
     probs = load_probs(expand(probs_paths))
-    if gt_cache is not None and Path(gt_cache).exists():
-        with open(gt_cache, "rb") as f:
-            gt = {k: v for k, v in pickle.load(f).items() if k.split("-", 1)[1] in probs}
-    else:  # build the ground truth from the competition data (e.g. inside a Kaggle kernel)
-        gt = load_gt(SimpleNamespace(gt_cache=None, data=None), set(probs))
+    gt = load_gt(SimpleNamespace(gt_cache=gt_cache, data=None), set(probs))
     cfg = PostConfig(**json.loads(Path(post_json).read_text()))
     scorer = Scorer(probs, gt, workers=1)
     try:
