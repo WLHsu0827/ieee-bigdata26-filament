@@ -95,4 +95,6 @@ Training uses only the competition's training annotations; inference uses only
 the test H-alpha images. The optional semi-supervised experiments additionally use
 *unlabelled* GONG H-alpha images from the public NSO archive, taken on days at least
 two days away from every competition image (`scripts/fetch_gong.py`; images are fetched,
-not redistributed). Code is released under the MIT licence.
+not redistributed). `docs/external_gong_manifest.csv` lists every image (URL, date, SHA-256 of the
+original and of the processed file); `scripts/check_external.py` re-checks the date gap against all
+train and test images and that the processing reproduces each file byte for byte. Code is released under the MIT licence.

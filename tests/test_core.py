@@ -447,3 +447,16 @@ def test_extra_pairs_and_concurrent_cache(tmp_path):
     imgs2, tgts2, _, tdir2 = cached_extra(tmp_path / "cache", extra_pairs([str(img_dir / "*.jpeg")], tgt2), 32, 0)
     assert tdir2 != outs[0][3] and tgts2.mean() == pytest.approx(200, abs=1)
     assert len(list((tmp_path / "cache").glob("extra_img_*"))) == 1
+
+
+def test_external_min_gaps():
+    import datetime as dt
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from check_external import min_gaps
+
+    used = {dt.date(2015, 3, 10), dt.date(2015, 3, 20)}
+    got = min_gaps([dt.date(2015, 3, 12), dt.date(2015, 3, 1), dt.date(2015, 3, 15), dt.date(2015, 3, 30)], used)
+    assert got == [2, 9, 5, 10]

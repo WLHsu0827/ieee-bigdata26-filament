@@ -96,6 +96,16 @@ ResNet34 and EfficientNetV2-S U-Nets reaches an out-of-fold PQ of `[TBD]`
   detection threshold hurts; shrinking to 0.45-0.5 gains a little. Because
   shrinking acts on each component independently, the PQ decomposition stays
   exact and the outline level is part of the nested selection.
+* **Semi-supervised training (disclosure; numbers [TBD] after the pilot).** 1,200 unlabelled GONG H-alpha
+  images from the public NSO/NISP archive (the same JPEG product as the competition images, with the
+  archive's text overlays removed by zeroing everything outside the inscribed circle), taken on days at
+  least two days away from every competition train and test image. `docs/external_gong_manifest.csv`
+  lists each file (URL, date, SHA-256 of the original and of the processed file);
+  `scripts/check_external.py` verifies the date gap and that the processing reproduces every file byte
+  for byte. No labels or other metadata are used. For CV fold k the teacher is the fold's own pair of
+  models (never trained on fold k's validation images); its flip-averaged probability maps are the
+  soft targets of the unlabelled images, mixed 1:1 per epoch with the labelled crops; the student has
+  the same architecture, budget and augmentation as the teacher.
 * **Robust selection objective.** Besides plain PQ we optimise the expected PQ
   when each ground-truth filament is labelled only with probability r
   (PQ_r = r S / (r TP + FP/2 + (1-r) TP/2 + r FN/2)); r < 1 penalises marginal
