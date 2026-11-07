@@ -69,11 +69,15 @@ pd.DataFrame(manifest["models"])"""),
     ("code", "cfg"),
     ("markdown", "## 3. Inference on the test images -> `submission.csv`"),
     ("code", """test_files = sorted((DATA_DIR / "test" / "test_images").glob("*.jp*g"))
+timing = {}
 t0 = time.time()
-df = infer.make_submission(models, DATA_DIR, cfg, device, tta=manifest.get("tta", 4))
+df = infer.make_submission(models, DATA_DIR, cfg, device, tta=manifest.get("tta", 4), timing=timing)
 elapsed = time.time() - t0
 df, report = submission.write(list(df.itertuples(index=False, name=None)), OUT_CSV, {f.stem for f in test_files})
-print(f"{len(test_files)} images, {len(df)} filaments, {elapsed / len(test_files):.2f} s per image on {device}")
+print(f"{len(test_files)} images, {len(df)} filaments -> {OUT_CSV}")
+print(f"end-to-end {elapsed / len(test_files):.2f} s per image on {device}: networks "
+      f"{timing['network_s_per_image']:.2f} s + post-processing {timing['post_s_per_image']:.2f} s "
+      f"({len(models)} models, TTA x{manifest.get('tta', 4)})")
 print(report)
 df.head()"""),
     ("markdown", "## 4. Visual check of the predicted filaments"),
@@ -90,43 +94,46 @@ for ax, f in zip(axes, test_files[:: max(len(test_files) // 3, 1)]):
     ax.set_title(f"{f.stem}: {len(rows)} filaments")
     ax.axis("off")
 plt.tight_layout()"""),
-    ("markdown", """## 5. Hold-out evaluation (optional; needs the training annotations)
+    ("markdown", """## 5. Out-of-fold evaluation
 
-Reproduces the organisers' self-evaluation (Panoptic Quality, IoU / Dice distributions,
-one-to-many and many-to-one relations) on the out-of-fold images of each model.
-Every annotator of an image is scored separately, as in the official metric."""),
+The organisers' self-evaluation quantities (Panoptic Quality, IoU / Dice distributions,
+one-to-many and many-to-one relations) on all 707 training images, each predicted only by
+the models that did not see it during training, every annotator scored separately.
+The figure and numbers below were produced by `scripts/make_figures.py evaluation` from the
+saved out-of-fold probability maps; set `RUN_VALIDATION = True` to recompute them here from
+the weights (about 15-30 min on one T4 GPU)."""),
+    ("code", """from IPython.display import Image, display
+
+eval_png, eval_json = REPO / "docs" / "figures" / "evaluation.png", REPO / "docs" / "evaluation.json"
+if eval_png.exists():
+    display(Image(filename=str(eval_png)))
+if eval_json.exists():
+    print(json.dumps(json.loads(eval_json.read_text()), indent=1)[:3000])"""),
     ("code", """from filseg import analysis, metrics
 from filseg.metrics import Crop
 
+RUN_VALIDATION = False  # set to True to recompute the out-of-fold evaluation from the weights
 train_json = DATA_DIR / "train" / data.TRAIN_JSON
-RUN_VALIDATION = train_json.exists() and all("fold" in m for m in manifest["models"])
-if RUN_VALIDATION:
+if RUN_VALIDATION and train_json.exists() and all("fold" in m for m in manifest["models"]):
     groups = data.group_by_image(data.load_entries(train_json))
     folds = data.image_folds(list(groups), manifest.get("nfolds", 5), manifest.get("seed", 2026))
     preds, gt = {}, {}
-    for (model, res, norm), meta in zip(models, manifest["models"]):
-        ids = [i for i in groups if folds[i] == meta["fold"]]
-        probs = infer.predict_full([(model, res, norm)], [data.read_image(DATA_DIR / "train" / "train_images" / groups[i][0].file_name) for i in ids], device)
-        for i, p in zip(ids, probs):
+    for k in sorted({m["fold"] for m in manifest["models"]}):
+        fold_models = [mm for mm, meta in zip(models, manifest["models"]) if meta["fold"] == k]
+        ids = [i for i in groups if folds[i] == k]
+        images = [data.read_image(DATA_DIR / "train" / "train_images" / groups[i][0].file_name) for i in ids]
+        for i, p in zip(ids, infer.predict_full(fold_models, images, device, tta=manifest.get("tta", 4))):
             lab, _ = postprocess.instances_from_prob(p, cfg)
             preds[i] = postprocess.label_to_crops(lab)
             for e in groups[i]:
                 gt[e.entry_id] = [Crop.from_full(m) for m in e.masks()]
     res, overlap_df = metrics.evaluate(gt, preds)
-    print("hold-out:", res)
-else:
-    print("training annotations or fold metadata not available -- skipping")"""),
-    ("code", """if RUN_VALIDATION:
+    print("out-of-fold:", res)
     iou, dice = analysis.overlap_distributions(overlap_df)
     gdeg, pdeg = metrics.matching_degrees(overlap_df)
-    fig, ax = plt.subplots(1, 3, figsize=(18, 4))
-    ax[0].hist(iou, bins=50, color="navy"); ax[0].set_title(f"IoU of overlapping pairs (mean {iou.mean():.3f})")
-    ax[1].hist(dice, bins=50, color="navy"); ax[1].set_title(f"Dice of overlapping pairs (mean {dice.mean():.3f})")
-    ks = sorted(set(gdeg) | set(pdeg))
-    ax[2].bar([k + 0.2 for k in ks], [gdeg.get(k, 0) for k in ks], width=0.4, label="GT -> #predictions (1:n)")
-    ax[2].bar([k - 0.2 for k in ks], [pdeg.get(k, 0) for k in ks], width=0.4, label="prediction -> #GT (n:1)")
-    ax[2].set_xlabel("number of overlapping partners"); ax[2].legend(); ax[2].set_title("matching degrees")
-    plt.tight_layout()"""),
+    print(f"mean IoU / Dice of overlapping pairs: {iou.mean():.3f} / {dice.mean():.3f}")
+    print("GT -> number of overlapping predictions:", dict(sorted(gdeg.items())))
+    print("prediction -> number of overlapping GT:", dict(sorted(pdeg.items())))"""),
     ("markdown", """## 6. Re-training (reference only)
 
 Each model in `weights/` was produced by `python -m filseg.train` with the arguments stored
