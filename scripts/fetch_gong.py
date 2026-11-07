@@ -153,12 +153,29 @@ def main() -> None:
           flush=True)
     img_dir = args.out / "images"
     img_dir.mkdir(parents=True, exist_ok=True)
-    rows, t0, pos, shown = [], time.time(), 0, 0
+    # checkpoint: accepted rows are appended to manifest.partial.csv after every batch; a restart keeps them
+    partial = args.out / "manifest.partial.csv"
+    fields = ["name", "url", "date", "site", "disk_mean", "disk_std", "sharpness"]
+    rows = []
+    if partial.exists():
+        with open(partial, newline="") as f:
+            rows = [r for r in csv.DictReader(f) if (img_dir / f"{r['name']}.jpeg").exists()]
+        done_days = {r["date"] for r in rows}
+        days = [d for d in days if d.isoformat() not in done_days]
+        print(f"resuming with {len(rows)} images already fetched", flush=True)
+    with open(partial, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows(rows)
+    t0, pos, shown = time.time(), 0, len(rows)
     with ThreadPoolExecutor(args.workers) as ex:
         while len(rows) < args.n and pos < len(days):
             batch = days[pos:pos + 4 * args.workers]
             pos += len(batch)
-            rows += [r for r in ex.map(lambda d: fetch_day(d, ranges, img_dir, args.seed), batch) if r]
+            new = [r for r in ex.map(lambda d: fetch_day(d, ranges, img_dir, args.seed), batch) if r]
+            rows += new
+            with open(partial, "a", newline="") as f:
+                csv.DictWriter(f, fieldnames=fields).writerows(new)
             if len(rows) >= shown + 100 or len(rows) >= args.n or pos >= len(days):
                 shown = len(rows)
                 print(f"{len(rows)} images from {pos} days [{time.time() - t0:.0f}s]", flush=True)
@@ -168,9 +185,10 @@ def main() -> None:
     if not rows:
         raise SystemExit("no image could be fetched")
     with open(args.out / "manifest.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         w.writerows(rows)
+    partial.unlink()
     print(f"kept {len(rows)} images from {pos} candidate days in {time.time() - t0:.0f}s -> {img_dir}")
 
 
