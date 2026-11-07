@@ -75,7 +75,8 @@ def payload() -> str:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in (sorted((ROOT / "filseg").rglob("*.py")) + sorted((ROOT / "scripts").glob("*.py"))
                   + sorted((ROOT / "configs").glob("*.json")) + sorted((ROOT / "notebooks").glob("*.ipynb"))
-                  + sorted((ROOT / "docs").glob("*.json")) + sorted((ROOT / "docs" / "figures").glob("*.png"))):
+                  + sorted((ROOT / "docs").glob("*.json"))
+                  + [p for p in sorted((ROOT / "docs" / "figures").glob("*.png")) if p.stat().st_size < 400_000]):
             z.write(f, f.relative_to(ROOT).as_posix())
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
