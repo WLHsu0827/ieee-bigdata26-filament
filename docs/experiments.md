@@ -95,3 +95,20 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   154 fragmented; FP 2,485 = 1,041 isolated + 1,444 overlapping. Upper bounds: isolated FPs removed 0.476,
   fragments grouped 0.461. Public LB: plain-PQ rule 0.38, robust r = 0.77 rule 0.39 -- the stricter selection
   transfers better again (third time, consistent with sparser test labels).
+* Semi-supervised pilot (11-08, fil-gpu-st0 + fil-cmp; **negative**): 1,200 unlabelled GONG archive images
+  (`docs/external_gong_manifest.csv`, >= 2 days from every competition image, verified by
+  `scripts/check_external.py`), pseudo-labelled by the fold-0 teachers (K1 fold-0 ResNet34 + EfficientNetV2-S,
+  flip TTA, 1.55 s/image); students of both architectures trained on fold 0's training images plus the
+  pseudo-labelled images (1:1 crops per epoch) with the teachers' time budget (9-13 epochs instead of 21-30).
+  Fold 0, 142 images, fixed rule / nested PQ: teacher ResNet34 0.4276 / 0.4423 vs student 0.4248 / 0.4382;
+  teacher EfficientNetV2-S 0.4378 / 0.4447 vs student 0.4336 / 0.4432; teacher pair 0.4425 / 0.4455 vs
+  student pair 0.4383 / 0.4439; all four 0.4405 / 0.4445. At equal compute the students are slightly worse
+  and add nothing to the ensemble, so the direction was stopped (1.8 GPU h).
+* Learned component filter on the K1 out-of-fold candidates (11-08, `scripts/fit_scorer.py`): gradient-boosted
+  trees on 12 candidate features (area, probability statistics, shape, position, rank in image), keep threshold
+  from grouped out-of-fold scores; stored as JSON in the post-processing configuration (`filseg/scorer.py`,
+  no scikit-learn needed at inference). Nested PQ 0.4470 (r = 0.77 shape, threshold 0.28) and 0.4462 (plain-PQ
+  shape, threshold 0.27) vs 0.4426 / 0.4422 for the rule selection (+0.004). End-to-end check: the written
+  configuration run through the official evaluation reproduces the component-table PQ exactly on fold 0
+  (features recomputed on another machine can differ by ~1e-7 and moved one of 1,933 candidates across a
+  tree split; the check therefore rebuilds the candidates locally).
