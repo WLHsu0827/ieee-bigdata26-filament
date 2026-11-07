@@ -414,3 +414,29 @@ def test_error_taxonomy_causes_and_bounds():
     s, tp, fp, fn = res.sum_iou + 370 / 400, res.tp + 1, res.fp - 2, res.fn - 1
     assert tax["upper_bounds"]["group_fragments"] == pytest.approx(s / (tp + 0.5 * fp + 0.5 * fn))
     assert tax["upper_bounds"]["remove_spurious"] > res.pq
+
+
+def test_extra_pairs_and_concurrent_cache(tmp_path):
+    import cv2
+    from concurrent.futures import ThreadPoolExecutor
+
+    from filseg.train import cached_extra, extra_pairs
+
+    img_dir, tgt_dir = tmp_path / "img", tmp_path / "tgt"
+    img_dir.mkdir()
+    tgt_dir.mkdir()
+    rng = np.random.default_rng(0)
+    for k in range(3):
+        cv2.imwrite(str(img_dir / f"im{k}.jpeg"), rng.integers(0, 255, (64, 64), dtype=np.uint8))
+        if k < 2:  # the third image has no teacher map and is skipped
+            cv2.imwrite(str(tgt_dir / f"im{k}.png"), np.full((64, 64), 40 * (k + 1), np.uint8))
+    pairs = extra_pairs([str(img_dir / "*.jpeg")], tgt_dir)
+    assert [p[0].stem for p in pairs] == ["im0", "im1"]
+    logs = []
+    with ThreadPoolExecutor(2) as ex:  # two concurrent "processes": one prepares, the other waits
+        outs = list(ex.map(lambda _: cached_extra(tmp_path / "cache", pairs, 32, 0, "global", logs.append), range(2)))
+    assert sum("preparing" in m for m in logs) == 1
+    for imgs, tgts, stats in outs:
+        assert imgs.shape == (2, 32, 32) and tgts.shape == (2, 32, 32) and stats.shape == (2, 2)
+        assert tgts[0].mean() == pytest.approx(40, abs=1) and tgts[1].mean() == pytest.approx(80, abs=1)
+    assert np.array_equal(outs[0][0], outs[1][0])

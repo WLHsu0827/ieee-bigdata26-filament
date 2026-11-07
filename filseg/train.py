@@ -144,6 +144,89 @@ def cached_arrays(cache_dir: Path | None, data_dir: Path, groups: dict[str, list
     return arr["imgs"], arr["tgts"], arr.get("wmaps"), np.array(arr["stats"])
 
 
+# ----------------------------------------------------------------------------- unlabelled images
+def extra_pairs(patterns, target_dir: Path) -> list[tuple[Path, Path]]:
+    """Unlabelled images (files / glob patterns) that have a teacher map ``<target_dir>/<stem>.png``."""
+    import glob
+
+    files: list[str] = []
+    for p in patterns:
+        p = str(p)
+        files += sorted(glob.glob(p, recursive=True)) if any(c in p for c in "*?[") else [p]
+    pairs = [(Path(f), Path(target_dir) / f"{Path(f).stem}.png") for f in dict.fromkeys(files)]
+    return [(f, t) for f, t in pairs if t.exists()]
+
+
+def _prepare_extra_one(args):
+    import cv2
+
+    from .model import image_stats, resize_image
+    img_path, tgt_path, res, norm = args
+    img = data.read_image(img_path)
+    tgt = cv2.imread(str(tgt_path), cv2.IMREAD_GRAYSCALE)
+    if tgt is None:
+        raise FileNotFoundError(tgt_path)
+    return resize_image(img, res), resize_image(tgt, res), image_stats(img, norm)
+
+
+def cached_extra(cache_dir: Path | None, pairs: list[tuple[Path, Path]], res: int, workers: int,
+                 norm: str = "global", log=print, wait_hours: float = 3.0):
+    """Images, teacher targets (uint8) and normalisation statistics of unlabelled images.
+
+    The arrays are written straight into memory-mapped ``.npy`` files (no in-memory copy, so
+    thousands of 2048 px images fit). With ``cache_dir`` set, one process prepares them under a
+    lock file while concurrent processes (other GPUs) wait and then map the same files.
+    """
+    import hashlib
+    import shutil
+    import tempfile
+
+    if cache_dir is None:
+        d, owner = Path(tempfile.mkdtemp(prefix="filseg_extra_")), True
+    else:
+        key = hashlib.sha1(json.dumps([CACHE_VERSION, res, norm, [(f.name, str(t)) for f, t in pairs]])
+                           .encode()).hexdigest()[:16]
+        d = Path(cache_dir) / f"extra_{res}_{norm}_{key}"
+        d.mkdir(parents=True, exist_ok=True)
+        try:
+            os.close(os.open(d / "lock", os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            owner = True
+        except FileExistsError:
+            owner = False
+    done = d / "done"
+    if not done.exists():
+        if owner:
+            n = len(pairs)
+            log(f"preparing {n} unlabelled images in {d} (free disk {shutil.disk_usage(d).free / 1e9:.0f} GB)")
+            imgs = np.lib.format.open_memmap(d / "imgs.npy", "w+", np.uint8, (n, res, res))
+            tgts = np.lib.format.open_memmap(d / "tgts.npy", "w+", np.uint8, (n, res, res))
+            stats = np.empty((n, 2), np.float32)
+            jobs = [(f, t, res, norm) for f, t in pairs]
+            pool = Pool(workers) if workers > 0 else None
+            try:
+                it = pool.imap(_prepare_extra_one, jobs, chunksize=2) if pool else map(_prepare_extra_one, jobs)
+                for k, (im, tg, st) in enumerate(it):
+                    imgs[k], tgts[k], stats[k] = im, tg, st
+            finally:
+                if pool:
+                    pool.close()
+                    pool.join()
+            imgs.flush()
+            tgts.flush()
+            del imgs, tgts
+            np.save(d / "stats.npy", stats)
+            done.write_text(str(n))
+        else:
+            log(f"waiting for another process to prepare {d}")
+            deadline = time.time() + wait_hours * 3600
+            while not done.exists():
+                if time.time() > deadline:
+                    raise TimeoutError(f"{d} was not completed by the process holding its lock")
+                time.sleep(2)
+    arr = {n: np.load(d / f"{n}.npy", mmap_mode="r") for n in ("imgs", "tgts", "stats")}
+    return arr["imgs"], arr["tgts"], np.array(arr["stats"])
+
+
 def _worker_init(_):
     import cv2
 
@@ -295,6 +378,11 @@ def main(argv=None) -> None:
     ap.add_argument("--limit-test", type=int, default=0, help="debug: predict only the first N test images")
     ap.add_argument("--cache-dir", type=Path, default=None,
                     help="cache prepared training arrays here (memory-mapped by later folds / processes)")
+    ap.add_argument("--extra-images", nargs="*", default=[],
+                    help="unlabelled images (files / glob patterns) trained on teacher maps (semi-supervised)")
+    ap.add_argument("--extra-targets", type=Path, default=None,
+                    help="folder of teacher maps <image stem>.png (scripts/pseudo_label.py)")
+    ap.add_argument("--extra-mult", type=int, default=2, help="samples per unlabelled image per epoch")
     args = ap.parse_args(argv)
 
     t_start = time.time()
@@ -339,6 +427,19 @@ def main(argv=None) -> None:
     if device.type == "cuda":
         model = model.to(memory_format=torch.channels_last)
     ds = TrainSet(imgs, tgts, args.crop or args.res, args.epoch_mult, wmaps, stats, idx=tr_idx)
+    n_extra = 0
+    if args.extra_images:
+        if wmaps is not None:
+            raise SystemExit("--extra-images cannot be combined with --small-weight")
+        pairs = extra_pairs(args.extra_images, args.extra_targets)
+        if not pairs:
+            raise SystemExit(f"no unlabelled image has a teacher map in {args.extra_targets}")
+        e_imgs, e_tgts, e_stats = cached_extra(args.cache_dir, pairs, args.res, args.workers, args.norm, log)
+        ds = torch.utils.data.ConcatDataset(
+            [ds, TrainSet(e_imgs, e_tgts, args.crop or args.res, args.extra_mult, None, e_stats)])
+        n_extra = len(pairs)
+        del e_imgs, e_tgts
+        log(f"unlabelled: {n_extra} images x {args.extra_mult} samples per epoch, teacher maps {args.extra_targets}")
     del imgs, tgts, wmaps  # only the dataset keeps the arrays; they are released after training
 
     def make_loader(bs: int) -> DataLoader:
@@ -476,7 +577,7 @@ def main(argv=None) -> None:
                          args.tta, args.infer_bs or args.bs, log, norm=args.norm, limit=args.limit_test)
     hours = (time.time() - t_start) / 3600
     done = {"hours": round(hours, 3), "epochs": args.epochs, "fold": args.fold, "res": args.res,
-            "arch": args.arch, "encoder": args.encoder, "post": asdict(cfg)}
+            "arch": args.arch, "encoder": args.encoder, "post": asdict(cfg), "extra_images": n_extra}
     if val_res is not None:
         done["val"] = {"pq": val_res.pq, "sq": val_res.sq, "rq": val_res.rq,
                        "tp": val_res.tp, "fp": val_res.fp, "fn": val_res.fn}
