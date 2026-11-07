@@ -89,6 +89,20 @@ ResNet34 and EfficientNetV2-S U-Nets reaches an out-of-fold PQ of `[TBD]`
 * **Selection.** Keep a component if its area, mean and peak probability
   exceed thresholds chosen by nested CV (outer folds = CV folds; the inner
   choice maximises pooled PQ on the other four folds' out-of-fold maps).
+* **Outline.** Detection and extent are decoupled: components are detected at
+  a low threshold (0.3-0.35, which joins fragments and finds faint
+  filaments), but each kept instance is redrawn where the probability exceeds
+  0.5, i.e. where most annotators would draw it. Growing outlines below the
+  detection threshold hurts; shrinking to 0.45-0.5 gains a little. Because
+  shrinking acts on each component independently, the PQ decomposition stays
+  exact and the outline level is part of the nested selection.
+* **Robust selection objective.** Besides plain PQ we optimise the expected PQ
+  when each ground-truth filament is labelled only with probability r
+  (PQ_r = r S / (r TP + FP/2 + (1-r) TP/2 + r FN/2)); r < 1 penalises marginal
+  detections more. On fold 0 the rule chosen with r = 0.77 is the same in 4 of
+  5 outer folds and has a *higher* nested plain PQ (0.425 vs 0.417) than the
+  rule chosen with plain PQ, i.e. the more conservative objective also acts as
+  a regulariser against selection noise.
 
 ## 4. Experiments
 
@@ -96,17 +110,20 @@ ResNet34 and EfficientNetV2-S U-Nets reaches an out-of-fold PQ of `[TBD]`
 |---|---|---|---|---|
 | classical darkness threshold | 2048 | 0.092 | - | 0.07 |
 | U-Net ResNet34 | 512 (full disk) | 0.365 | - | 0.30 |
-| U-Net ResNet34 | 1024 (full disk) | 0.416 (nested over 5 sub-folds: 0.417) | - | 0.34 |
+| U-Net ResNet34 | 1024 (full disk) | 0.416 (nested over 5 sub-folds: 0.417; robust objective 0.425) | - | 0.34 |
 | U-Net ResNet34, disk norm | 2048 (crops) | [TBD] | [TBD] | [TBD] |
 | U-Net EfficientNetV2-S, disk norm | 2048 (crops) | [TBD] | [TBD] | [TBD] |
 | ensemble 2 x 5 folds | 2048 | - | [TBD] | [TBD] |
 
 * Public LB vs validation: the model predicts as many filaments per test image
   as per validation image (6.1 vs 6.6), yet the public score is ~0.82 of the
-  validation score for every model. This is consistent with sparser labels on
-  the test images (a public reference ensemble shows the same ratio, ~0.87);
-  we report both the official out-of-fold PQ and the expected PQ when each
-  label is kept with probability r = 0.77 [discussion].
+  validation score for both the 512 px and the 1024 px model. Two explanations
+  were checked against these two models: test labels sparser than training
+  labels (each filament kept with probability r; r = 0.68 reproduces both
+  public scores to the displayed precision), and test labels without the
+  "Unidentifiable" class (34 % of the training filaments; predicts 0.367 / 0.311
+  vs public 0.34 / 0.30, a worse fit). We do not tune on the public LB; the
+  sparse-label view motivates the robust selection objective above.
 * Efficiency: [TBD] s per image (network) + [TBD] s (post-processing) on one T4.
 
 ## 5. Conclusion
