@@ -66,10 +66,24 @@ def component_features(prob: np.ndarray, lab: np.ndarray) -> list[dict]:
 def _job(args):
     image_id, prob, shape_cfg, gt_entries = args
     p = upsample(prob)
-    lab, _ = instances_from_prob(p, shape_cfg)
+    # candidates and their features come from the detection outline (as in instances_from_prob,
+    # where selection rules see detection statistics); an outline threshold above the detection
+    # threshold then shrinks every candidate independently, so the decomposition stays exact
+    t_mask = shape_cfg.mask_threshold
+    if 0 < t_mask < shape_cfg.threshold:
+        raise ValueError("component decomposition supports only mask_threshold above the detection threshold")
+    lab, _ = instances_from_prob(p, replace(shape_cfg, mask_threshold=0.0))
     feats = component_features(p, lab)
-    crops = [Crop(sl[0].start, sl[1].start, lab[sl] == i)
-             for i, sl in enumerate(ndi.find_objects(lab), start=1) if sl is not None]
+    crops = []
+    for i, sl in enumerate(ndi.find_objects(lab), start=1):
+        if sl is None:
+            continue
+        m = lab[sl] == i
+        if t_mask > shape_cfg.threshold:
+            m = m & (p[sl] > t_mask)
+            if shape_cfg.fill_holes:
+                m = ndi.binary_fill_holes(m)
+        crops.append(Crop(sl[0].start, sl[1].start, m))
     n_e = len(gt_entries)
     v = np.zeros(len(crops))
     best = np.zeros((len(crops), max(n_e, 1)))
@@ -79,8 +93,10 @@ def _job(args):
             b = iou.max(axis=0)
             best[:, k] = b
             v += np.where(b > IOU_THRESHOLD, b, 0.0)
-    for f, vc, bc in zip(feats, v, best):
-        f.update(image_id=image_id, v=float(vc), n_entries=n_e, n_matched=int((bc > IOU_THRESHOLD).sum()),
+    for f, vc, bc, c in zip(feats, v, best, crops):
+        gone = c.area == 0  # vanished after shrinking: dropped by the pipeline, counts nowhere
+        f.update(image_id=image_id, v=float(vc), n_entries=0 if gone else n_e,
+                 n_matched=0 if gone else int((bc > IOU_THRESHOLD).sum()),
                  mean_best_iou=float(bc[:n_e].mean()) if n_e else 0.0)
     return feats
 

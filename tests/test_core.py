@@ -363,3 +363,34 @@ def test_refine_extent_grow_and_shrink():
     assert set(np.unique(grown[18:32, 15:105])) == {1, 2}            # ... to A or B, never shared
     shrunk, _ = instances_from_prob(prob, PostConfig(threshold=0.5, min_area=1, mask_threshold=0.7))
     assert shrunk.max() == 2 and set(np.unique(shrunk)) == {0, 1, 2}  # C dropped, labels renumbered
+
+
+def test_component_decomposition_with_outline_threshold():
+    from filseg.components import build
+    from filseg.tune import Scorer
+    rng = np.random.default_rng(5)
+    probs, gt = {}, {}
+    for i in range(4):
+        p = np.zeros((256, 256), np.float32)
+        entries = {f"01010{a}-img{i}": [] for a in (1, 2)}
+        for _ in range(5):
+            y, x = rng.integers(10, 220, 2)
+            hh, ww = rng.integers(6, 24, 2)
+            peak = rng.uniform(0.55, 0.98)
+            ramp = np.linspace(0.45, 1.0, ww)[None, :] * peak          # partial shrinking at 0.6 / 0.75
+            p[y:y + hh, x:x + ww] = np.maximum(p[y:y + hh, x:x + ww], ramp)
+            for a, e in enumerate(entries):
+                if rng.random() < 0.8:
+                    full = np.zeros((H, W), bool)
+                    full[y * 8 + a * 2:(y + hh) * 8, x * 8 + ww * 3:(x + ww) * 8] = True
+                    entries[e].append(Crop.from_full(full))
+        probs[f"img{i}"] = p.astype(np.float16)
+        gt.update({e: c for e, c in entries.items() if c})
+    for t_mask in (0.0, 0.6, 0.75):
+        cs = build(probs, gt, PostConfig(threshold=0.5, min_area=0, mask_threshold=t_mask), workers=1)
+        for min_area, min_max in [(0, 0.0), (2000, 0.0), (0, 0.8)]:
+            pq_fast, tp, fp, fn = cs.pq(cs.rule(min_area=min_area, min_max_prob=min_max))
+            ref = Scorer(probs, gt, workers=1)(PostConfig(threshold=0.5, min_area=min_area, min_max_prob=min_max,
+                                                          mask_threshold=t_mask))
+            assert pq_fast == pytest.approx(ref.pq, abs=1e-9), (t_mask, min_area, min_max)
+            assert (tp, fp, fn) == (ref.tp, ref.fp, ref.fn)

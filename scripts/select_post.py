@@ -38,6 +38,8 @@ def main() -> None:
     ap.add_argument("--thresholds", type=float, nargs="+", default=[0.3, 0.35, 0.4, 0.45, 0.5])
     ap.add_argument("--close", type=int, nargs="+", default=[0, 4])
     ap.add_argument("--merge", type=int, nargs="+", default=[0], help="fragment grouping distances (px)")
+    ap.add_argument("--mask", type=float, nargs="+", default=[0.0],
+                    help="outline thresholds above the detection threshold (0 = detection outline)")
     ap.add_argument("--nfolds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=2026)
     ap.add_argument("--workers", type=int, default=None)
@@ -55,25 +57,29 @@ def main() -> None:
     print(f"{len(probs)} images in folds {sorted({folds[i] for i in probs})}, {len(gt)} GT entries", flush=True)
 
     sets = {}
-    for thr, close, merge in itertools.product(args.thresholds, args.close, args.merge):
-        cache = args.out / (f"components_t{thr}_c{close}" + (f"_m{merge}" if merge else "") + ".pkl")
+    for thr, close, merge, mask in itertools.product(args.thresholds, args.close, args.merge, args.mask):
+        if 0 < mask <= thr:
+            continue  # only outlines above the detection threshold keep the decomposition exact
+        cache = args.out / (f"components_t{thr}_c{close}" + (f"_m{merge}" if merge else "")
+                            + (f"_o{mask}" if mask else "") + ".pkl")
         if cache.exists():
             with open(cache, "rb") as f:
                 cs = pickle.load(f)
         else:
             cs = components.build(probs, gt, PostConfig(threshold=thr, close_radius=close, merge_distance=merge,
-                                                        min_area=0), args.workers)
+                                                        mask_threshold=mask, min_area=0), args.workers)
             with open(cache.with_suffix(".tmp"), "wb") as f:
                 pickle.dump(cs, f, protocol=pickle.HIGHEST_PROTOCOL)
             cache.with_suffix(".tmp").replace(cache)
-        sets[(thr, close, merge)] = cs
-        print(f"shape t={thr} close={close} merge={merge}: {len(cs.table)} candidates [{time.time() - t0:.0f}s]",
-              flush=True)
+        sets[(thr, close, merge, mask)] = cs
+        print(f"shape t={thr} close={close} merge={merge} outline={mask}: {len(cs.table)} candidates "
+              f"[{time.time() - t0:.0f}s]", flush=True)
 
     for r in args.r:
         res = components.nested_select(sets, folds, r=r)
-        thr, close, merge = res["final_shape"]
-        cfg = replace(PostConfig(threshold=thr, close_radius=close, merge_distance=merge), **res["final_rule"])
+        thr, close, merge, mask = res["final_shape"]
+        cfg = replace(PostConfig(threshold=thr, close_radius=close, merge_distance=merge, mask_threshold=mask),
+                      **res["final_rule"])
         print(f"--- objective: PQ with label rate r = {r}")
         for c in res["fold_choices"]:
             print(f"outer fold {c['fold']}: shape {c['shape']} rule {c['rule']} inner {c['inner']:.4f} "
