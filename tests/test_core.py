@@ -394,3 +394,23 @@ def test_component_decomposition_with_outline_threshold():
                                                           mask_threshold=t_mask))
             assert pq_fast == pytest.approx(ref.pq, abs=1e-9), (t_mask, min_area, min_max)
             assert (tp, fp, fn) == (ref.tp, ref.fp, ref.fn)
+
+
+def test_error_taxonomy_causes_and_bounds():
+    from filseg import analysis
+
+    g_tp, g_frag, g_miss = box(0, 0, 20, 20), box(50, 0, 10, 40), box(100, 100, 10, 10)
+    g_m1, g_m2 = box(300, 0, 10, 20), box(300, 24, 10, 20)      # two GT, one prediction spans both
+    preds = [box(0, 0, 20, 20), box(50, 0, 10, 18), box(50, 21, 10, 19),
+             box(300, 0, 10, 44), box(800, 800, 10, 10)]
+    gt = {"010101-img": [Crop.from_full(m) for m in (g_tp, g_frag, g_miss, g_m1, g_m2)]}
+    pr = {"img": [Crop.from_full(m) for m in preds]}
+    res, odf = evaluate(gt, pr)
+    tax = analysis.error_taxonomy(gt, pr, odf)
+    assert tax["gt"] == {"tp": 1, "missed": 1, "fragmented": 1, "merged": 2, "too_large": 0, "partial": 0}
+    assert tax["pred"] == {"tp": 1, "spurious": 1, "overlapping": 3}
+    assert tax["pq"] == pytest.approx(res.pq)
+    # grouping the two fragments (union IoU 370/400) adds one TP and removes two FPs
+    s, tp, fp, fn = res.sum_iou + 370 / 400, res.tp + 1, res.fp - 2, res.fn - 1
+    assert tax["upper_bounds"]["group_fragments"] == pytest.approx(s / (tp + 0.5 * fp + 0.5 * fn))
+    assert tax["upper_bounds"]["remove_spurious"] > res.pq

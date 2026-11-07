@@ -67,6 +67,94 @@ def summary(gt: dict[str, list[Crop]], preds: dict[str, list[Crop]], overlap_df:
     }
 
 
+GT_CAUSES = ["tp", "missed", "fragmented", "merged", "too_large", "partial"]
+PRED_CAUSES = ["tp", "spurious", "overlapping"]
+
+
+def error_taxonomy(gt: dict[str, list[Crop]], preds: dict[str, list[Crop]], overlap_df: pd.DataFrame) -> dict:
+    """Why GT filaments are missed and predictions are false positives (per annotator entry, pooled).
+
+    Intersections follow exactly from IoU and areas (``I = IoU (|g| + |p|) / (1 + IoU)``), so
+    no masks are needed. Every GT filament without a match (IoU > 0.5) gets one cause:
+
+    * ``missed``: no prediction overlaps it;
+    * ``fragmented``: >= 2 predictions lie mostly (>= 50 % of their area) inside it and their
+      union would match (IoU > 0.5) -- fixable by grouping fragments;
+    * ``merged``: its best-overlapping prediction covers >= 50 % of it but also overlaps another
+      GT filament of the same annotator -- fixable by splitting;
+    * ``too_large``: the best prediction covers >= 50 % of it but is too large (no other GT);
+    * ``partial``: the best prediction covers < 50 % of it.
+
+    Predictions without a match are ``spurious`` (no overlap with any GT of that annotator) or
+    ``overlapping``. ``upper_bounds`` gives the pooled PQ if all fragmented filaments were
+    grouped (fragments replaced by their union) or all spurious predictions removed.
+    """
+    gt_count = dict.fromkeys(GT_CAUSES, 0)
+    pred_count = dict.fromkeys(PRED_CAUSES, 0)
+    s_tot = tp_tot = fp_tot = fn_tot = 0.0
+    frag_gain_s = frag_tp = frag_fp_removed = 0.0
+    for r in overlap_df.itertuples(index=False):
+        s_tot += r.sum_iou
+        tp_tot += r.tp
+        fp_tot += r.fp
+        fn_tot += r.fn
+        if r.n_gt == 0:
+            pred_count["spurious"] += r.n_pred
+            continue
+        if r.n_pred == 0:
+            gt_count["missed"] += r.n_gt
+            continue
+        iou = np.asarray(r.iou_matrix, np.float64)
+        ga = np.array([c.area for c in gt[r.entry_id]], np.float64)[:, None]
+        pa = np.array([c.area for c in preds[r.image_id]], np.float64)[None, :]
+        inter = iou * (ga + pa) / (1.0 + iou)
+        hit = iou > IOU_THRESHOLD
+        for i in range(r.n_gt):
+            if hit[i].any():
+                gt_count["tp"] += 1
+                continue
+            if not (inter[i] > 0).any():
+                gt_count["missed"] += 1
+                continue
+            inside = (inter[i] > 0) & (inter[i] >= 0.5 * pa[0]) & ~hit.any(axis=0)
+            if inside.sum() >= 2:
+                si = inter[i, inside].sum()
+                u = si / (ga[i, 0] + pa[0, inside].sum() - si)
+                if u > IOU_THRESHOLD:
+                    gt_count["fragmented"] += 1
+                    frag_gain_s += u
+                    frag_tp += 1
+                    frag_fp_removed += int(inside.sum())
+                    continue
+            j = int(np.argmax(iou[i]))
+            if inter[i, j] >= 0.5 * ga[i, 0]:
+                others = (inter[:, j] > 0)
+                others[i] = False
+                gt_count["merged" if others.any() else "too_large"] += 1
+            else:
+                gt_count["partial"] += 1
+        matched_pred = hit.any(axis=0)
+        pred_count["tp"] += int(matched_pred.sum())
+        overl = (inter > 0).any(axis=0)
+        pred_count["spurious"] += int((~matched_pred & ~overl).sum())
+        pred_count["overlapping"] += int((~matched_pred & overl).sum())
+
+    def pq(s, tp, fp, fn):
+        d = tp + 0.5 * fp + 0.5 * fn
+        return float(s / d) if d else 0.0
+
+    base = pq(s_tot, tp_tot, fp_tot, fn_tot)
+    return {
+        "gt": gt_count,
+        "pred": pred_count,
+        "pq": base,
+        "upper_bounds": {
+            "group_fragments": pq(s_tot + frag_gain_s, tp_tot + frag_tp, fp_tot - frag_fp_removed, fn_tot - frag_tp),
+            "remove_spurious": pq(s_tot, tp_tot, fp_tot - pred_count["spurious"], fn_tot),
+        },
+    }
+
+
 def _pq(t: pd.DataFrame) -> float:
     den = t["tp"].sum() + 0.5 * t["fp"].sum() + 0.5 * t["fn"].sum()
     return float(t["sum_iou"].sum() / den) if den else 0.0

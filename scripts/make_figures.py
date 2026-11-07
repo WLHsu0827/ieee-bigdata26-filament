@@ -184,6 +184,7 @@ def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
                "gt_degrees": {int(k): int(v) for k, v in sorted(gdeg.items())},
                "pred_degrees": {int(k): int(v) for k, v in sorted(pdeg.items())},
                "recall_by_size": {str(s): round(float(r), 4) for s, r in zip(by_size["size"], by_size["match_rate"])},
+               "error_taxonomy": analysis.error_taxonomy(gt, preds, odf),
                **{k: v for k, v in analysis.aggregation_breakdown(odf).items()}}
     path.with_suffix(".json").write_text(json.dumps(summary, indent=1))
     return path

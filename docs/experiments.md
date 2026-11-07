@@ -29,25 +29,45 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   0.35-0.40, 19 in 0.40-0.45, then a cluster of ~110 teams at 0.50-0.60 that coincides with a
   public notebook resubmitting a pre-computed prediction file (not a model). A public honest
   10-model ensemble reports nested OOF 0.450 vs public 0.39 (same direction of gap), explained
-  there by sparser test labels.* E1 predicts 6.6 filaments per validation image and 6.1 per test image with the same rule, so the
+  there by sparser test labels.
+* E1 predicts 6.6 filaments per validation image and 6.1 per test image with the same rule, so the
   model does not behave differently on the test images; the validation-to-public gap (also seen by
   the public reference) is consistent with sparser test labels (training annotators draw 7.1
   filaments per image on average). Ratio public / validation: 0.82 for both E0b and E1.
 * Nested post-processing selection on E1 (5 pseudo-folds of fold 0, `scripts/select_post.py`):
   nested PQ 0.4167 (in-sample best 0.4250); chosen rule threshold 0.35, closing 4, area >= 300,
   mean probability >= 0.8, peak >= 0.99 (`configs/post_c1_nested.json`). Optimising PQ under a
-  label rate r = 0.77 picks a similar rule (threshold 0.30, area >= 400, mean >= 0.8).* Fragment grouping (merge nearby components, 10 / 20 px) on E1: nested PQ 0.4175 vs 0.4167 without
+  label rate r = 0.77 picks a similar rule (threshold 0.30, area >= 400, mean >= 0.8).
+* Fragment grouping (merge nearby components, 10 / 20 px) on E1: nested PQ 0.4175 vs 0.4167 without
   (in-sample best 0.4268 with 10 px vs 0.4250) -- within noise; kept as an option for the final
-  selection on the full out-of-fold set.* Why is the public LB ~0.82 x validation? Two hypotheses checked against E1 / E0b (11-07):
+  selection on the full out-of-fold set.
+* Why is the public LB ~0.82 x validation? Two hypotheses checked against E1 / E0b (11-07):
   (a) test labels sparser (each GT kept with probability r): r = 0.68 reproduces both public
   scores (E1 0.340 vs LB 0.34, E0b 0.296 vs 0.30); (b) test GT without the "Unidentifiable"
   class (34 % of training filaments, smaller: median 868 px vs ~1,500 px): E1 0.367 vs 0.34,
   E0b 0.311 vs 0.30 -- fits worse. Both favour stricter selection (fewer, larger instances) than
   the validation optimum; we do not tune on the public LB, but one of the two final submissions
-  can use a rule chosen under hypothesis (a).* Outline threshold (detect at t, redraw kept instances at p > t_mask; 11-07): growing hurts
+  can use a rule chosen under hypothesis (a).
+* Outline threshold (detect at t, redraw kept instances at p > t_mask; 11-07): growing hurts
   (t_mask 0.15-0.30: 0.403-0.423 vs 0.425), shrinking to 0.45-0.50 helps slightly (0.4269-0.4275,
   better in 3/5 pseudo-folds). Nested selection with outlines as an option: plain-PQ objective
   0.4167 (unchanged: more freedom = more selection noise on 142 images); the r = 0.77 objective
   picks the same rule in 4/5 outer folds -- threshold 0.30, closing 4, area >= 400, mean >= 0.8,
   outline 0.50 -- with nested official PQ 0.4247, the best honest estimate for E1 so far. The final
   selection is repeated on all 707 out-of-fold images of the K1 ensemble.
+* Learned component filter (11-07, scratch prototype on the E1 component sets): gradient-boosted
+  regression of each candidate's per-entry matched IoU from its features (area, mean / peak / p90
+  probability, elongation, fill ratio, distance from disk centre, rank in image), threshold chosen
+  on inner out-of-fold scores, nested over the same 5 pseudo-folds. Averaged over the 28 shape
+  configurations it is *not* better than the three-parameter rule (plain-PQ objective: nested 0.419
+  vs 0.420 on average, better in 9 / 28 shapes; best shapes 0.425 vs 0.427; r = 0.77 objective:
+  0.418 vs 0.423). Negative on 142 images; re-checked on the 707 out-of-fold images of K1.
+* Error taxonomy of E1 with the r = 0.77 rule (`analysis.error_taxonomy`, in-sample, PQ 0.427;
+  per annotator entry): of 1,659 GT filaments 949 matched; of the 710 unmatched, 460 have no
+  overlapping prediction, 107 are covered < 50 % (partial), 54 are merged with a neighbour into
+  one prediction, 52 are covered by a too-large prediction, 37 are fragmented (>= 2 predictions
+  whose union would match). Of 401 false positives 111 overlap no GT of that annotator.
+  Upper bounds: perfect grouping of fragments 0.448 (+0.021), removing all non-overlapping false
+  positives 0.443 (+0.016). Detection of unmarked / faint filaments (and annotator disagreement)
+  dominates; fragment grouping is the largest *post-processing* headroom but distance-based merging
+  realises almost none of it (+0.001).
