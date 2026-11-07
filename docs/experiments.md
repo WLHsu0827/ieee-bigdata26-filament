@@ -16,6 +16,8 @@ scored separately. LB = public leaderboard (~50 % of the test images).
 | E0b | 11-06 | as E1 but 512 px, global norm, 25 epochs on Kaggle CPU (9.7 h), no EMA; post grid: threshold 0.55, closing 4, min area 500 | 0.365 (0.649 / 0.562) | 0.30 | resolution 512 -> 1024 = +0.05 PQ on fold 0 |
 | E1c | 11-07 | E1 model, rule from nested CV with plain PQ (threshold 0.35, closing 4, area >= 300, mean >= 0.8, peak >= 0.99) | nested 0.417 | 0.35 | same network outputs as E1 (re-inferred on Kaggle CPU, TTA4: 14.8 s/image on 4 CPU cores) |
 | E1d | 11-07 | E1 model, rule from nested CV with robust objective r = 0.77 (threshold 0.30, closing 4, area >= 400, mean >= 0.8, outline 0.5) | nested 0.425 | 0.35 | stricter selection transfers (+0.01 vs the grid-tuned rule, LB 0.34) |
+| K1-r34-f0 | 11-07 | U-Net ResNet34, native 2048 px (768 crops, 4 per image per epoch), disk normalisation, lr 3e-4, EMA 0.999 + warm-up, 30 epochs, TTA4 | fold 0: 0.4276 (0.675 / 0.634) with the fixed nested rule of E1 | - | 1.37 h on one T4; inference 1.14 s/image (network, TTA4) + 0.49 s post |
+| K1-v2s-f0 | 11-07 | same with EfficientNetV2-S encoder (timm tf_efficientnetv2_s), bs 6, 21 epochs (time budget) | fold 0: **0.4375** (0.682 / 0.641) | - | 1.49 h; 1.48 s/image + 0.57 s post |
 
 ### Notes on E1 (11-06)
 
