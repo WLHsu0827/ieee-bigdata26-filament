@@ -28,7 +28,7 @@ from .metrics import IOU_THRESHOLD, Crop, overlap_matrices
 from .postprocess import PostConfig, instances_from_prob, upsample
 
 FEATURES = ["log_area", "mean_prob", "max_prob", "p90_prob", "std_prob", "elongation", "fill_ratio",
-            "radius", "n_comp_image", "area_rank"]
+            "radius", "n_comp_image", "area_rank", "length", "width"]
 
 
 def component_features(prob: np.ndarray, lab: np.ndarray) -> list[dict]:
@@ -46,12 +46,13 @@ def component_features(prob: np.ndarray, lab: np.ndarray) -> list[dict]:
             cov = np.cov(np.stack([ys, xs]).astype(np.float64))
             ev = np.sort(np.linalg.eigvalsh(cov))
             elong = float(np.sqrt(max(ev[1], 1e-6) / max(ev[0], 1e-6)))
+            length, width = 4.0 * float(np.sqrt(max(ev[1], 0.0))), 4.0 * float(np.sqrt(max(ev[0], 0.0)))
         else:
-            elong = 1.0
+            elong, length, width = 1.0, 1.0, 1.0
         cy, cx = sl[0].start + ys.mean(), sl[1].start + xs.mean()
         feats.append(dict(area=area, log_area=float(np.log(area)), mean_prob=float(p.mean()),
                           max_prob=float(p.max()), p90_prob=float(np.percentile(p, 90)),
-                          std_prob=float(p.std()), elongation=elong,
+                          std_prob=float(p.std()), elongation=elong, length=length, width=width,
                           fill_ratio=area / float(m.shape[0] * m.shape[1]),
                           radius=float(np.hypot(cy - h / 2, cx - w / 2) / (h / 2)),
                           y0=sl[0].start, x0=sl[1].start))
@@ -163,7 +164,8 @@ def fit_scorer(table: pd.DataFrame, n_splits: int = 5, seed: int = 0):
     from sklearn.ensemble import HistGradientBoostingRegressor
     from sklearn.model_selection import GroupKFold
 
-    x = table[FEATURES].to_numpy(np.float64)
+    feats = [f for f in FEATURES if f in table.columns]
+    x = table[feats].to_numpy(np.float64)
     y = (table["v"] / table["n_entries"].clip(lower=1)).to_numpy()
     groups = table["image_id"].to_numpy()
     oof = np.zeros(len(table))
@@ -261,3 +263,60 @@ def nested_select(sets: dict, folds: dict[str, int], grid: dict | None = None, r
             "fold_choices": choices, "final_shape": key, "final_rule": rule,
             "final_pq_in_sample": pq_sparse(fs, ftp, ffp, ffn, 1.0),
             "final_objective_in_sample": pq_sparse(fs, ftp, ffp, ffn, r)}
+
+LEARNED_PARAMS = dict(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, min_samples_leaf=20,
+                      l2_regularization=1.0, random_state=0)
+
+
+def nested_learned(cs: ComponentSet, folds: dict[str, int], r: float = 1.0, inner_splits: int = 5,
+                   grid=None) -> dict:
+    """Nested cross-validation of a *learned* component filter on one shape configuration.
+
+    For every outer fold a gradient-boosted regressor predicts each candidate's per-entry matched
+    IoU ``v / |E|`` from its features (:data:`FEATURES`); the keep threshold is chosen on inner
+    out-of-fold predictions of the other folds (objective :func:`pq_sparse` with label rate ``r``),
+    and the model refitted on those folds filters the held-out fold. Comparable with
+    ``nested_select({shape: cs}, folds, r=r)`` on the same shape.
+    """
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    from sklearn.model_selection import GroupKFold
+
+    grid = np.linspace(0.05, 0.6, 56) if grid is None else grid
+    t = cs.table.reset_index(drop=True)
+    feats = [f for f in FEATURES if f in t.columns]
+    x = t[feats].to_numpy(np.float64)
+    y = (t["v"] / t["n_entries"].clip(lower=1)).to_numpy()
+    img = t["image_id"].to_numpy()
+    v, nm, ne = t["v"].to_numpy(float), t["n_matched"].to_numpy(int), t["n_entries"].to_numpy(int)
+    images = set(cs.gt_per_image)
+    fold_of = np.array([folds[i] for i in img])
+
+    def counts(sel, imgs):
+        tp = int(nm[sel].sum())
+        return float(v[sel].sum()), tp, int((ne[sel] - nm[sel]).sum()), sum(cs.gt_per_image.get(i, 0) for i in imgs) - tp
+
+    def fit_predict(tr, te):
+        return HistGradientBoostingRegressor(**LEARNED_PARAMS).fit(x[tr], y[tr]).predict(x[te])
+
+    pooled, lams = np.zeros(4), []
+    for k in sorted({folds[i] for i in images}):
+        inner = np.flatnonzero(fold_of != k)
+        outer = np.flatnonzero(fold_of == k)
+        inner_imgs = {i for i in images if folds[i] != k}
+        oof = np.zeros(len(inner))
+        for a, b in GroupKFold(inner_splits).split(inner, groups=img[inner]):
+            oof[b] = fit_predict(inner[a], inner[b])
+        score = np.zeros(len(t))
+        score[inner] = oof
+        best = max((pq_sparse(*counts(np.isin(np.arange(len(t)), inner) & (score > lam), inner_imgs), r=r), lam)
+                   for lam in grid)
+        lam = float(best[1])
+        lams.append(round(lam, 3))
+        score[outer] = fit_predict(inner, outer)
+        sel = np.zeros(len(t), bool)
+        sel[outer] = score[outer] > lam
+        pooled += np.array(counts(sel, images - inner_imgs))
+    s, tp, fp, fn = pooled
+    return {"r": r, "nested_pq": pq_sparse(s, tp, fp, fn, 1.0), "nested_objective": pq_sparse(s, tp, fp, fn, r),
+            "nested_counts": {"sum_iou": float(s), "tp": int(tp), "fp": int(fp), "fn": int(fn)},
+            "thresholds": lams, "features": feats}

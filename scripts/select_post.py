@@ -45,6 +45,8 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--r", type=float, nargs="+", default=[1.0],
                     help="label rates of the objective (1.0 = official PQ; < 1 models sparser test labels)")
+    ap.add_argument("--learned", action="store_true",
+                    help="also run nested CV of a learned component filter on the selected shape (vs the rule)")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -89,6 +91,15 @@ def main() -> None:
               f"objective {res['final_objective_in_sample']:.4f}) [{time.time() - t0:.0f}s]", flush=True)
         tag = "" if r == 1.0 else f"_r{r}"
         (args.out / f"post_selected{tag}.json").write_text(json.dumps(asdict(cfg), indent=1))
+        if args.learned:
+            shape = res["final_shape"]
+            same = components.nested_select({shape: sets[shape]}, folds, r=r)
+            learned = components.nested_learned(sets[shape], folds, r=r)
+            print(f"learned filter on shape {shape}: nested PQ {learned['nested_pq']:.4f} (objective "
+                  f"{learned['nested_objective']:.4f}, thresholds {learned['thresholds']}) vs rule on the same shape "
+                  f"{same['nested_pq']:.4f} (objective {same['nested_objective']:.4f})", flush=True)
+            res["learned_same_shape"] = learned
+            res["rule_same_shape"] = {k: same[k] for k in ("nested_pq", "nested_objective", "nested_counts")}
         res["fold_choices"] = [{**c, "shape": list(c["shape"])} for c in res["fold_choices"]]
         res["final_shape"] = list(res["final_shape"])
         (args.out / f"selection{tag}.json").write_text(json.dumps(res, indent=1))
