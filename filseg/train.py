@@ -136,7 +136,12 @@ def cached_arrays(cache_dir: Path | None, data_dir: Path, groups: dict[str, list
         log(f"could not write the array cache ({e})")
         if tmp is not None and tmp.exists():
             tmp.unlink()
-    return imgs, tgts, wmaps, stats
+        return imgs, tgts, wmaps, stats
+    # continue with the memory-mapped copies: frees this process's private copy, so concurrent
+    # processes on one machine share a single page-cache copy of the arrays
+    del imgs, tgts, wmaps
+    arr = {n: np.load(d / f"{n}.npy", mmap_mode="r") for n in names}
+    return arr["imgs"], arr["tgts"], arr.get("wmaps"), np.array(arr["stats"])
 
 
 def _worker_init(_):

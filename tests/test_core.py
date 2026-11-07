@@ -339,7 +339,7 @@ def test_cached_arrays_roundtrip(tmp_path):
     first = cached_arrays(tmp_path / "cache", tmp_path / "data", groups, 256, 0, 0.0, "disk", msgs.append)
     second = cached_arrays(tmp_path / "cache", tmp_path / "data", groups, 256, 0, 0.0, "disk", msgs.append)
     assert any("cached in" in m for m in msgs) and any("loading prepared arrays" in m for m in msgs)
-    assert isinstance(second[0], np.memmap) and second[2] is None
+    assert isinstance(first[0], np.memmap) and isinstance(second[0], np.memmap) and second[2] is None
     for a, b in zip(first, second):
         assert (a is None and b is None) or np.array_equal(np.asarray(a), np.asarray(b))
     assert first[1].max() == 255 and first[3].shape == (2, 2)
