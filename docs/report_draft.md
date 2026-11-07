@@ -139,8 +139,9 @@ T4 GPU; five EfficientNetV2-S networks alone reach 0.444 at 5.3 s per image.
 (Fold-0 and fold-mean numbers use one fixed rule; "nested" numbers are pooled over the outer
 folds of a nested cross-validation of the post-processing on all 707 out-of-fold images.)
 
-* Error profile of the final ensemble (707 out-of-fold images, 8,199 GT filaments of 1,154
-  annotator sets): 63 % matched, SQ 0.68. Of the unmatched GT filaments 58 % have no
+* Error profile of the final configuration (ensemble + learned filter; 707 out-of-fold images,
+  8,199 GT filaments of 1,154 annotator sets; in-sample for the filter): PQ 0.462, 62 % matched,
+  SQ 0.68, 1,707 false positives (531 without any overlap). Of the unmatched GT filaments 64 % have no
   overlapping prediction (71 % of them < 1,200 px; 74 % contain probabilities >= 0.5, i.e. the
   network sees them but the filter drops them). On images with several annotators the ensemble
   (learned filter) matches 82 % of the filaments that another annotator also drew but only 32 %

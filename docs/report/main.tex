@@ -145,8 +145,9 @@ ensemble matches 62\,\% of the annotated filaments (SQ 0.68). On images with sev
 matches 82\,\% of the filaments that another annotator also drew, but only 32\,\% of those drawn by a
 single annotator. Of the filaments without any overlapping prediction (25\,\%), 71\,\% are smaller
 than 1,200\,px and 74\,\% contain probabilities above 0.5---the network sees them, but keeping them
-would cost more false positives than it gains. Fragmentation and merging are rare (one-to-many and
-many-to-one relations in Fig.~\ref{fig:eval}). Even an oracle that groups fragments optimally across
+would cost more false positives than it gains. Fragmentation and merging are rare: 2.8\,\% of the annotated
+filaments overlap two or more predictions and 2.6\,\% of the predictions overlap two or more filaments
+(Fig.~\ref{fig:eval}). Even an oracle that groups fragments optimally across
 detection levels would gain only 0.003 PQ, whereas an oracle choosing each component's outline would
 gain 0.012: the remaining errors are mostly faint, small or annotator-specific filaments and outlines
 that decide whether a match crosses IoU 0.5.

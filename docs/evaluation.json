@@ -2,73 +2,90 @@
  "images": 707,
  "entries": 1154,
  "post": {
-  "threshold": 0.3,
+  "threshold": 0.25,
   "close_radius": 0,
   "fill_holes": true,
-  "min_area": 200,
-  "min_mean_prob": 0.85,
-  "min_max_prob": 0.99,
+  "min_area": 0,
+  "min_mean_prob": 0.0,
+  "min_max_prob": 0.0,
   "merge_distance": 0,
   "dilate_radius": 0,
-  "mask_threshold": 0.5
+  "mask_threshold": 0.5,
+  "scorer": {
+   "trees": 200,
+   "features": [
+    "log_area",
+    "mean_prob",
+    "max_prob",
+    "p90_prob",
+    "std_prob",
+    "elongation",
+    "fill_ratio",
+    "radius",
+    "n_comp_image",
+    "area_rank",
+    "length",
+    "width"
+   ]
+  },
+  "min_score": 0.27999999999999997
  },
- "pq": 0.4445093173866356,
- "sq": 0.6823532391001009,
- "rq": 0.6514357841590407,
- "tp": 5161,
- "fp": 2485,
- "fn": 3038,
- "mean_iou_overlapping": 0.5931501388549805,
- "mean_dice_overlapping": 0.7240839600563049,
+ "pq": 0.46210264779812443,
+ "sq": 0.6828465103467745,
+ "rq": 0.6767298958055036,
+ "tp": 5066,
+ "fp": 1707,
+ "fn": 3133,
+ "mean_iou_overlapping": 0.6056387424468994,
+ "mean_dice_overlapping": 0.7362654805183411,
  "gt_degrees": {
-  "0": 1751,
-  "1": 6129,
-  "2": 289,
-  "3": 29,
-  "5": 1
+  "0": 2016,
+  "1": 5954,
+  "2": 210,
+  "3": 19
  },
  "pred_degrees": {
-  "0": 1041,
-  "1": 6421,
-  "2": 171,
-  "3": 12
+  "0": 531,
+  "1": 6062,
+  "2": 168,
+  "3": 11
  },
  "recall_by_size": {
-  "[0.0, 300.0)": 0.2507,
-  "[300.0, 600.0)": 0.4906,
-  "[600.0, 1200.0)": 0.6477,
-  "[1200.0, 2500.0)": 0.6934,
-  "[2500.0, 5000.0)": 0.7109,
-  "[5000.0, 10000.0)": 0.6998,
-  "[10000.0, inf)": 0.6205
+  "[0.0, 300.0)": 0.2567,
+  "[300.0, 600.0)": 0.4626,
+  "[600.0, 1200.0)": 0.6347,
+  "[1200.0, 2500.0)": 0.6869,
+  "[2500.0, 5000.0)": 0.6998,
+  "[5000.0, 10000.0)": 0.698,
+  "[10000.0, inf)": 0.6256
  },
  "error_taxonomy": {
   "gt": {
-   "tp": 5161,
-   "missed": 1751,
-   "fragmented": 154,
-   "merged": 304,
-   "too_large": 348,
-   "partial": 481
+   "tp": 5066,
+   "missed": 2016,
+   "fragmented": 111,
+   "merged": 295,
+   "too_large": 310,
+   "partial": 401
   },
   "pred": {
-   "tp": 5160,
-   "spurious": 1041,
-   "overlapping": 1444
+   "tp": 5065,
+   "spurious": 531,
+   "overlapping": 1176
   },
-  "pq": 0.4445093173866356,
+  "pq": 0.46210264779812443,
   "upper_bounds": {
-   "group_fragments": 0.46128189480674425,
-   "remove_spurious": 0.4757666937308323
+   "group_fragments": 0.4750331043596237,
+   "remove_spurious": 0.4790943039147925
   }
  },
- "pooled": 0.4445093173866356,
- "mean_per_entry": 0.4394615482325075,
- "mean_per_image": 0.4338531265416807,
+ "pooled": 0.46210264779812443,
+ "mean_per_entry": 0.4589811498731509,
+ "mean_per_image": 0.45317490957017137,
  "by_n_annotators": {
-  "1": 0.4478,
-  "2": 0.4536,
-  "3": 0.4353
+  "1": 0.4672,
+  "2": 0.4719,
+  "3": 0.4506
  },
  "n_entries_by_n_annotators": {
   "1": 411,

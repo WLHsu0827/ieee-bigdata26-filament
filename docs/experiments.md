@@ -136,3 +136,9 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   headroom is the per-component outline, which decides whether borderline matches cross IoU 0.5. A global
   tighter outline does not capture it (final configuration, all 707 OOF images: outline 0.45 / 0.5 / 0.55 /
   0.6 / 0.65 -> PQ 0.4612 / 0.4620 / 0.4623 / 0.4617 / 0.4614, in-sample for the filter); not pursued further.
+* Final configuration evaluated on all 707 out-of-fold images (fil-eval2; in-sample for the learned filter):
+  full ensemble PQ 0.4621 (SQ 0.683, RQ 0.677; TP 5,066, FP 1,707, FN 3,133); fast profile 0.4574. Compared
+  with the plain rule, isolated false positives drop from 1,041 to 531. FN causes: 2,016 missed, 401 partial,
+  310 too large, 295 merged, 111 fragmented. GT overlapping >= 2 predictions: 2.8 %; predictions overlapping
+  >= 2 GT: 2.6 %. Mean IoU / Dice of overlapping pairs 0.606 / 0.736. `docs/evaluation*.json`, figures in
+  `docs/figures/evaluation*.png`.

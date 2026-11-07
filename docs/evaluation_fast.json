@@ -1,0 +1,97 @@
+{
+ "images": 707,
+ "entries": 1154,
+ "post": {
+  "threshold": 0.3,
+  "close_radius": 4,
+  "fill_holes": true,
+  "min_area": 0,
+  "min_mean_prob": 0.0,
+  "min_max_prob": 0.0,
+  "merge_distance": 0,
+  "dilate_radius": 0,
+  "mask_threshold": 0.5,
+  "scorer": {
+   "trees": 200,
+   "features": [
+    "log_area",
+    "mean_prob",
+    "max_prob",
+    "p90_prob",
+    "std_prob",
+    "elongation",
+    "fill_ratio",
+    "radius",
+    "n_comp_image",
+    "area_rank",
+    "length",
+    "width"
+   ]
+  },
+  "min_score": 0.24999999999999994
+ },
+ "pq": 0.45737135636518306,
+ "sq": 0.6805289529827342,
+ "rq": 0.6720821419287757,
+ "tp": 5171,
+ "fp": 2018,
+ "fn": 3028,
+ "mean_iou_overlapping": 0.5960172414779663,
+ "mean_dice_overlapping": 0.7272593379020691,
+ "gt_degrees": {
+  "0": 1767,
+  "1": 6173,
+  "2": 231,
+  "3": 26,
+  "4": 1,
+  "5": 1
+ },
+ "pred_degrees": {
+  "0": 695,
+  "1": 6280,
+  "2": 197,
+  "3": 16
+ },
+ "recall_by_size": {
+  "[0.0, 300.0)": 0.2567,
+  "[300.0, 600.0)": 0.4777,
+  "[600.0, 1200.0)": 0.6386,
+  "[1200.0, 2500.0)": 0.7058,
+  "[2500.0, 5000.0)": 0.7196,
+  "[5000.0, 10000.0)": 0.7219,
+  "[10000.0, inf)": 0.6051
+ },
+ "error_taxonomy": {
+  "gt": {
+   "tp": 5171,
+   "missed": 1767,
+   "fragmented": 126,
+   "merged": 360,
+   "too_large": 341,
+   "partial": 434
+  },
+  "pred": {
+   "tp": 5170,
+   "spurious": 695,
+   "overlapping": 1323
+  },
+  "pq": 0.45737135636518306,
+  "upper_bounds": {
+   "group_fragments": 0.47152062361528463,
+   "remove_spurious": 0.4790056783330454
+  }
+ },
+ "pooled": 0.45737135636518306,
+ "mean_per_entry": 0.4549528125401299,
+ "mean_per_image": 0.44975938626015044,
+ "by_n_annotators": {
+  "1": 0.4636,
+  "2": 0.467,
+  "3": 0.4448
+ },
+ "n_entries_by_n_annotators": {
+  "1": 411,
+  "2": 290,
+  "3": 453
+ }
+}

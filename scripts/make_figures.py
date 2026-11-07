@@ -194,7 +194,10 @@ def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
     fig.tight_layout()
     fig.savefig(path, dpi=110)
     plt.close(fig)
-    summary = {"images": len(probs), "entries": len(gt), "post": json.loads(Path(post_json).read_text()),
+    post = json.loads(Path(post_json).read_text())
+    if post.get("scorer"):  # summarise the learned filter (the full trees live in the post-processing JSON)
+        post["scorer"] = {"trees": len(post["scorer"]["trees"]), "features": post["scorer"]["features"]}
+    summary = {"images": len(probs), "entries": len(gt), "post": post,
                "pq": res.pq, "sq": res.sq, "rq": res.rq, "tp": res.tp, "fp": res.fp, "fn": res.fn,
                "mean_iou_overlapping": float(iou.mean()), "mean_dice_overlapping": float(dice.mean()),
                "gt_degrees": {int(k): int(v) for k, v in sorted(gdeg.items())},
