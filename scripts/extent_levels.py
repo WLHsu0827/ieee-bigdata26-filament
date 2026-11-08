@@ -61,8 +61,9 @@ VARIANTS = {"rule": (None, False), "base": (FEATURES, False), "extra": (FEATURES
 DEFAULT_VARIANTS = ["rule", "base", "extra", "levels", "levels_extra"]
 
 
-def _job(args) -> list[dict]:
-    image_id, maps, cfg, levels, gt_entries = args
+def candidate_features(maps: list[np.ndarray], cfg: PostConfig):
+    """Ensemble map, detection label map, component slices and features (detection features of
+    filseg.components plus the extra evidence) of one image from its networks' uint8 maps."""
     acc = np.zeros(maps[0].shape, np.float32)
     for m in maps:
         acc += m
@@ -91,14 +92,23 @@ def _job(args) -> list[dict]:
         d = d[np.arange(len(d)) != k] if len(c) > 1 else d
         f["nn_dist"] = float(min(d.min(), 2048.0))
         f["n_conf_image"] = n_conf
+    return ens, lab, slices, feats
+
+
+def outline(lab: np.ndarray, ens: np.ndarray, slices: list, i: int, level: float, fill_holes: bool) -> np.ndarray:
+    """Mask (within ``slices[i - 1]``) of candidate ``i`` redrawn where the ensemble exceeds ``level``."""
+    sl = slices[i - 1]
+    m = (lab[sl] == i) & (ens[sl] > level)
+    return ndi.binary_fill_holes(m) if fill_holes else m
+
+
+def _job(args) -> list[dict]:
+    image_id, maps, cfg, levels, gt_entries = args
+    ens, lab, slices, feats = candidate_features(maps, cfg)
     n_e = len(gt_entries)
     for lev in levels:
-        crops = []
-        for i, sl in enumerate(slices, start=1):
-            m = (lab[sl] == i) & (ens[sl] > lev)
-            if cfg.fill_holes:
-                m = ndi.binary_fill_holes(m)
-            crops.append(Crop(sl[0].start, sl[1].start, m))
+        crops = [Crop(sl[0].start, sl[1].start, outline(lab, ens, slices, i, lev, cfg.fill_holes))
+                 for i, sl in enumerate(slices, start=1)]
         v = np.zeros(len(crops))
         nm = np.zeros(len(crops), int)
         for _, gts in gt_entries:
@@ -412,6 +422,116 @@ def compare_tables(args) -> None:
         Path(args.out).write_text(json.dumps(res, indent=1))
 
 
+_TS: dict = {}
+
+
+def _ts_init(files: dict, cfg: PostConfig, models: dict, level: float) -> None:
+    import cv2
+
+    cv2.setNumThreads(1)
+    _TS.update(files={ek: np.load(p) for ek, p in files.items()}, cfg=cfg, models=models, level=level)
+
+
+def _kept_labels(maps: list[np.ndarray], feats_cols: list[str], model, lam: float) -> np.ndarray:
+    cfg, level = _TS["cfg"], _TS["level"]
+    ens, lab, slices, feats = candidate_features(maps, cfg)
+    kept = np.zeros(lab.shape, np.int32)
+    if not feats:
+        return kept
+    keep = model.predict(np.array([[f[c] for c in feats_cols] for f in feats], np.float64)) > lam
+    n = 0
+    for i in np.flatnonzero(keep) + 1:
+        m = outline(lab, ens, slices, int(i), level, cfg.fill_holes)
+        if m.any():
+            n += 1
+            kept[slices[i - 1]][m] = n
+    return kept
+
+
+def _ts_job(key: str) -> dict:
+    import itertools
+
+    from ensemble_shift import agreement
+
+    maps = {ek: z[key] for ek, z in _TS["files"].items()}
+    encs, folds = sorted({e for e, _ in maps}), sorted({k for _, k in maps})
+    settings = {f"two{k}": [maps[(e, k)] for e in encs] for k in folds}
+    settings["ten"] = [np.round(np.mean([maps[(e, k)].astype(np.float32) for k in folds], 0)).astype(np.uint8)
+                       for e in encs]  # per-encoder averages; their mean is the ten-network ensemble
+    out = {"image": key}
+    for name, (cols, model, lam) in _TS["models"].items():
+        labs = {s: _kept_labels(ms, cols, model, lam) for s, ms in settings.items()}
+        out[name] = {"n": {s: int(lab.max()) for s, lab in labs.items()},
+                     "vs_ten": [agreement(labs["ten"], labs[f"two{k}"]) for k in folds],
+                     "pairs": [agreement(labs[f"two{a}"], labs[f"two{b}"]) for a, b in itertools.combinations(folds, 2)]}
+    return out
+
+
+def _fit_full(lv: Levels, feats: list[str], r: float):
+    """Filter fitted on all out-of-fold candidates; keep threshold from grouped out-of-fold predictions."""
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    from sklearn.model_selection import GroupKFold
+
+    x, y = _x(lv, feats), lv.y[:, lv.i05]
+    oof = np.zeros(len(y))
+    for a, b in GroupKFold(5).split(x, y, lv.img):
+        oof[b] = _fit_predict(x[a], y[a], x[b])
+    rows, lev = np.ones(len(y), bool), np.full(len(y), lv.i05)
+    lam = max((pq_sparse(*lv.counts(oof > t, lev, rows, set(lv.gt)), r=r), t) for t in np.linspace(0.05, 0.6, 56))[1]
+    return HistGradientBoostingRegressor(**LEARNED_PARAMS).fit(x, y), float(lam)
+
+
+def test_shift(args) -> None:
+    """Label-free ensemble-size check of learned filters on the test images (as scripts/ensemble_shift.py):
+    decisions on the ten-network average (per-network features from the per-encoder averages of five) vs on
+    each fold's two-network average (per-network features from single networks, as out of fold)."""
+    import itertools
+
+    from cli_utils import expand
+
+    with open(args.table, "rb") as fh:
+        data = pickle.load(fh)
+    lv = Levels(data)
+    cfg = PostConfig(**data["post"])
+    models = {}
+    for name in args.variants:
+        cols = VARIANTS[name][0]
+        model, lam = _fit_full(lv, cols, args.r)
+        models[name] = (cols, model, lam)
+        print(f"{name}: filter fitted on {len(lv.t)} candidates, keep threshold {lam:.2f}", flush=True)
+    files = {}
+    for p in expand(args.test_probs):
+        enc = "r34" if "r34" in str(p) else "v2s"
+        files[(enc, int(re.search(r"fold(\d+)", str(p)).group(1)))] = str(p)
+    with np.load(next(iter(files.values()))) as z:
+        keys = sorted(z.files)[:args.limit] if args.limit else sorted(z.files)
+    method = "forkserver" if "forkserver" in mp.get_all_start_methods() else "spawn"
+    with mp.get_context(method).Pool(args.workers, initializer=_ts_init,
+                                     initargs=(files, cfg, models, cfg.mask_threshold)) as pool:
+        rows = list(pool.imap_unordered(_ts_job, keys, chunksize=2))
+    folds = sorted({k for _, k in files})
+    res = {"images": len(rows), "r": args.r}
+    for name in args.variants:
+        n_ten = sum(r_[name]["n"]["ten"] for r_ in rows)
+        n_two = [sum(r_[name]["n"][f"two{k}"] for r_ in rows) for k in folds]
+
+        def pq(tp, s, na, nb):
+            return s / max(tp + 0.5 * (na - tp) + 0.5 * (nb - tp), 1e-9)
+
+        vs = [pq(sum(r_[name]["vs_ten"][j][0] for r_ in rows), sum(r_[name]["vs_ten"][j][1] for r_ in rows),
+                 n_ten, n_two[j]) for j in range(len(folds))]
+        pairs = [pq(sum(r_[name]["pairs"][j][0] for r_ in rows), sum(r_[name]["pairs"][j][1] for r_ in rows),
+                    n_two[a], n_two[b]) for j, (a, b) in enumerate(itertools.combinations(range(len(folds)), 2))]
+        res[name] = {"instances_per_image_ten": n_ten / len(rows),
+                     "instances_per_image_two": float(np.mean(n_two)) / len(rows),
+                     "two_range": [min(n_two) / len(rows), max(n_two) / len(rows)],
+                     "ten_vs_two_pq": float(np.mean(vs)), "two_vs_two_pq": float(np.mean(pairs)),
+                     "threshold": models[name][2]}
+        print(name, json.dumps(res[name]), flush=True)
+    if args.out:
+        Path(args.out).write_text(json.dumps(res, indent=1))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -443,8 +563,17 @@ def main() -> None:
     ct.add_argument("--r", type=float, nargs="+", default=[1.0, 0.77])
     ct.add_argument("--inner-splits", type=int, default=5)
     ct.add_argument("--out", default=None)
+    ts = sub.add_parser("test-shift")
+    ts.add_argument("table", help="out-of-fold candidate table (build) to fit the filters on")
+    ts.add_argument("--test-probs", nargs="+", required=True, help="test_probs.npz of every network (glob)")
+    ts.add_argument("--variants", nargs="+", default=["base", "extra_nets", "extra"])
+    ts.add_argument("--r", type=float, default=0.77)
+    ts.add_argument("--workers", type=int, default=4)
+    ts.add_argument("--limit", type=int, default=0)
+    ts.add_argument("--out", default=None)
     args = ap.parse_args()
-    {"build": build, "analyse": analyse, "compare": compare, "compare-tables": compare_tables}[args.cmd](args)
+    {"build": build, "analyse": analyse, "compare": compare, "compare-tables": compare_tables,
+     "test-shift": test_shift}[args.cmd](args)
 
 
 if __name__ == "__main__":
