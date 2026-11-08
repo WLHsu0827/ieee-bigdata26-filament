@@ -179,6 +179,13 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   resamples positive), +0.0012, SD 0.0014 at r = 0.77. The per-network evidence carries it (0.4497 / 0.4489 alone;
   context alone 0.4481 / 0.4478). Caveat before any adoption: out of fold the per-network features come from single
   networks, in the submission from averages of five per encoder. Rule on the same candidates: 0.4430 / 0.4432.
+  Label-free test check of that caveat (`extent_levels.py test-shift`, Kaggle CPU kernel fil-shift2, 180 test images,
+  filters fitted on all out-of-fold candidates, keep thresholds for r = 0.77): with ten networks the current filter
+  keeps 5.65 instances per image vs 5.91 with the five two-network averages (-4 %, fold range 5.63-6.04); with the
+  per-network evidence 5.82 vs 6.19 (-6 %, ten-network value below the fold range 5.94-6.32); agreement ten vs two
+  0.91 for both (two vs two 0.87-0.88). The extra evidence therefore shifts more between out-of-fold and submission
+  conditions than the current features, which puts its small nested gain at risk: **not adopted** (finals A / B
+  unchanged).
 * Half-precision overflow (11-08): the EfficientNetV2-S networks occasionally produce non-finite logits under
   fp16 autocast (numpy "invalid value encountered in cast" when saving maps; K1 fold 0 and the first notebook
   run). `predict_batch` now recomputes such a TTA pass in fp32. Second reproducibility run (fil-nb-verify v2):
