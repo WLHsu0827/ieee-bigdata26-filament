@@ -584,7 +584,7 @@ def main(argv=None) -> None:
     if ema is not None:
         model = ema.module
     model.eval()
-    del dl, ds  # release the training arrays (and loader workers) before the final evaluation
+    dl = ds = None  # release the training arrays (and loader workers) before the final evaluation
     gc.collect()
     if args.extra_cleanup and extra_tgt_dir is not None:
         import shutil

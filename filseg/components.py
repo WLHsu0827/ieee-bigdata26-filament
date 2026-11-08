@@ -19,7 +19,6 @@ import multiprocessing as mp
 import os
 from dataclasses import dataclass, field, replace
 
-import cv2
 import numpy as np
 import pandas as pd
 from scipy import ndimage as ndi

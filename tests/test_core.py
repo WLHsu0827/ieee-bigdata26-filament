@@ -444,7 +444,7 @@ def test_extra_pairs_and_concurrent_cache(tmp_path):
     tgt2.mkdir()
     for k in range(2):
         cv2.imwrite(str(tgt2 / f"im{k}.png"), np.full((64, 64), 200, np.uint8))
-    imgs2, tgts2, _, tdir2 = cached_extra(tmp_path / "cache", extra_pairs([str(img_dir / "*.jpeg")], tgt2), 32, 0)
+    _, tgts2, _, tdir2 = cached_extra(tmp_path / "cache", extra_pairs([str(img_dir / "*.jpeg")], tgt2), 32, 0)
     assert tdir2 != outs[0][3] and tgts2.mean() == pytest.approx(200, abs=1)
     assert len(list((tmp_path / "cache").glob("extra_img_*"))) == 1
 
