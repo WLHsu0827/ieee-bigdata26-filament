@@ -212,6 +212,13 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   **V2-M passes the pre-registered gate** (fold-0 ensemble >= +0.005 with the learned filter); the small-filament
   weighting does not. **TTA x8 vs x4** on all 707 images (same committed weights): learned filter +0.0024 / +0.0009
   (P <= 0: 0.03 / 0.26), rule +0.0031 / +0.0030 (0.02 / 0.01), for twice the network time.
+* V2-M on more folds (11-09): folds 1 and 2 on Kaggle (fil-gpu-p2, 2.70 h, 23 epochs each, fixed-rule PQ 0.4329 /
+  0.4137 vs V2-S 0.4288 / 0.4208), fold 3 on Colab (stopped after 21 of 24 epochs when the session ended). Interim
+  check on folds 0-2 (424 images, nested CV with the three CV folds as outer folds, same fixed shape; kernel
+  fil-gate3, `docs/gate3/`): adding V2-M +0.0001 / -0.0013 (learned filter, r = 1 / 0.77) and -0.0021 / -0.0034
+  (rule); V2-M replacing R34 -0.0002 / +0.0006 and -0.0037 / -0.0024 (paired SD 0.002-0.003). The fold-0 gain
+  (+0.005 to +0.011) did not repeat on folds 1-2 -- a single-fold gate on 142 images was too noisy. **Negative:**
+  the larger encoder does not improve the ensemble; the V2-M track was stopped (folds 3-4 not completed).
 * Half-precision overflow (11-08): the EfficientNetV2-S networks occasionally produce non-finite logits under
   fp16 autocast (numpy "invalid value encountered in cast" when saving maps; K1 fold 0 and the first notebook
   run). `predict_batch` now recomputes such a TTA pass in fp32. Second reproducibility run (fil-nb-verify v2):
