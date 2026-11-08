@@ -1,10 +1,10 @@
-# Technical report draft (to be transferred to the official Overleaf template, 4 pages)
+# Solar filament segmentation: extended technical description
 
-Working title: **Consensus-trained full-resolution U-Nets with PQ-aware instance
-selection for solar filament segmentation**
-
-Numbers marked `[TBD]` are filled in from `docs/experiments.md` when the final
-cross-validation runs are complete.
+Companion to the four-page report **Consensus-Trained Full-Resolution U-Nets with PQ-Aware
+Instance Selection for Solar Filament Segmentation** (`docs/report/main.tex`; build the PDF with
+`python docs/report/build_pdf.py --out build/`). It describes the same method in more detail and
+with intermediate numbers; every experiment, including the negative ones, is logged in
+`docs/experiments.md`.
 
 ## Abstract
 
@@ -20,6 +20,8 @@ decomposition of PQ and chosen by nested cross-validation. An ensemble of
 ResNet34 and EfficientNetV2-S U-Nets with a learned component filter reaches a
 nested out-of-fold PQ of 0.447 (human agreement 0.34) at about 8 s per image on one
 T4 GPU; five EfficientNetV2-S networks alone reach 0.444 at about 5 s per image.
+The two final submissions use the ten networks with the robust nested-CV rule (public
+leaderboard 0.39) and with the learned filter (0.38).
 
 ## 1. Data and label analysis
 
@@ -80,18 +82,27 @@ T4 GPU; five EfficientNetV2-S networks alone reach 0.444 at about 5 s per image.
   pixel; a 1.6x larger window is rotated (any angle), scaled (0.9-1.1),
   flipped and centre-cropped, followed by gamma / contrast / blur / noise
   jitter. Loss BCE + soft Dice; AdamW (lr 3e-4, weight decay 1e-4), linear
-  warm-up and cosine decay, mixed precision, 30 epochs of 4 crops per image,
-  EMA of the weights (decay 0.999 with warm-up). 5-fold cross-validation
-  grouped by image (all annotators of an image in one fold).
+  warm-up and cosine decay, mixed precision, 4 crops per image and epoch for 30
+  epochs (ResNet34, batch 8) or within a 1.5 h budget per fold (EfficientNetV2-S,
+  batch 6, 21-24 epochs), EMA of the weights (decay 0.999 with warm-up). 5-fold
+  cross-validation grouped by image (all annotators of an image in one fold);
+  1.3-1.5 h per fold on one T4 GPU.
 * **Inference.** Full 2048 px image, flip TTA (x4), average of the fold models
-  of both encoders.
-* **Instances.** Threshold the probability map, closing (radius 4 px), hole
-  filling, 8-connected components.
+  of both encoders. Both encoders use the same five folds, so the out-of-fold
+  map of a training image, on which all selection and evaluation below is done,
+  averages the two networks that did not see it (one for the fast profile); the
+  submission averages all ten.
+* **Instances.** Threshold the probability map (0.25 for the ten-network
+  ensemble; 0.3 followed by a closing of radius 4 px for the five-network fast
+  profile), fill holes, take 8-connected components.
 * **Selection.** Keep a component if its area, mean and peak probability
   exceed thresholds chosen by nested CV (outer folds = CV folds; the inner
-  choice maximises pooled PQ on the other four folds' out-of-fold maps).
+  choice maximises pooled PQ on the other four folds' out-of-fold maps). The
+  rule of final submission A, chosen on all 707 images with the robust
+  objective below (r = 0.77): mean probability >= 0.85 and peak >= 0.99, no
+  area limit (`configs/post_final_rule.json`).
 * **Outline.** Detection and extent are decoupled: components are detected at
-  a low threshold (0.3-0.35, which joins fragments and finds faint
+  a low threshold (0.25-0.3, which joins fragments and finds faint
   filaments), but each kept instance is redrawn where the probability exceeds
   0.5, i.e. where most annotators would draw it. Growing outlines below the
   detection threshold hurts; shrinking to 0.45-0.5 gains a little. Because
@@ -104,7 +115,8 @@ T4 GPU; five EfficientNetV2-S networks alone reach 0.444 at about 5 s per image.
   fill ratio, distance from the disk centre, number of candidates in the image and area rank),
   trained on the out-of-fold candidates of all 707 training images; a candidate is kept if
   the prediction exceeds a threshold chosen on grouped out-of-fold predictions (the PQ/2
-  criterion above, estimated). Nested PQ 0.447 vs 0.443 for the best three-parameter rule on
+  criterion above, estimated: 0.28 for final submission B, `configs/post_final_full.json`, and
+  0.25 for the fast profile). Nested PQ 0.447 vs 0.443 for the best three-parameter rule on
   the same candidates. The trees are exported to JSON (`filseg/scorer.py`), so inference needs
   only numpy.
 * **Semi-supervised training (tested, not used).** We also tried noisy-student training with
@@ -123,7 +135,9 @@ T4 GPU; five EfficientNetV2-S networks alone reach 0.444 at about 5 s per image.
   detections more. On fold 0 the rule chosen with r = 0.77 is the same in 4 of
   5 outer folds and has a *higher* nested plain PQ (0.425 vs 0.417) than the
   rule chosen with plain PQ, i.e. the more conservative objective also acts as
-  a regulariser against selection noise.
+  a regulariser against selection noise. For the ten-network ensemble the r = 0.77
+  rule has nested plain PQ 0.4426 vs 0.4422 with r = 1, and it scored 0.39 vs 0.38
+  on the public leaderboard.
 
 ## 4. Experiments
 
@@ -131,10 +145,10 @@ T4 GPU; five EfficientNetV2-S networks alone reach 0.444 at about 5 s per image.
 |---|---|---|---|---|
 | classical darkness threshold | 2048 | 0.092 | - | 0.07 |
 | U-Net ResNet34 | 512 (full disk) | 0.365 | - | 0.30 |
-| U-Net ResNet34 | 1024 (full disk) | 0.416 (nested over 5 sub-folds: 0.417; robust objective 0.425) | - | 0.34 |
+| U-Net ResNet34 | 1024 (full disk) | 0.416 (nested over 5 sub-folds: 0.417; robust objective 0.425) | - | 0.34 (grid-tuned rule) / 0.35 (nested rules) |
 | U-Net ResNet34, disk norm | 2048 (768 crops) | 0.428 (mean of 5 folds 0.422) | 5 folds: 0.432 | - |
 | U-Net EfficientNetV2-S, disk norm | 2048 (768 crops) | 0.438 (mean of 5 folds 0.432) | 5 folds: 0.440 (rule) / 0.444 (learned filter) | 0.38 (learned filter) |
-| ensemble 2 x 5 folds | 2048 | - | 0.442 (rule) / **0.447** (learned filter) | 0.38 (rule, plain PQ) / 0.39 (rule, r = 0.77) / 0.38 (learned filter) |
+| ensemble 2 x 5 folds | 2048 | - | 0.442 (rule, plain PQ) / 0.443 (rule, r = 0.77) / **0.447** (learned filter) | 0.38 (rule, plain PQ) / 0.39 (rule, r = 0.77) / 0.38 (learned filter) |
 
 (Fold-0 and fold-mean numbers use one fixed rule; "nested" numbers are pooled over the outer
 folds of a nested cross-validation of the post-processing on all 707 out-of-fold images.)
@@ -152,16 +166,20 @@ folds of a nested cross-validation of the post-processing on all 707 out-of-fold
 
 * Public LB vs validation: the model predicts as many filaments per test image
   as per validation image (6.1 vs 6.6), yet the public score is ~0.82 of the
-  validation score for both the 512 px and the 1024 px model. Two explanations
+  validation score for both the 512 px and the 1024 px model (0.85-0.88 for the
+  2048 px models). Two explanations
   were checked against these two models: test labels sparser than training
   labels (each filament kept with probability r; r = 0.68 reproduces both
   public scores to the displayed precision), and test labels without the
   "Unidentifiable" class (34 % of the training filaments; predicts 0.367 / 0.311
   vs public 0.34 / 0.30, a worse fit). We do not tune on the public LB; the
-  sparse-label view motivates the robust selection objective above.
+  sparse-label view motivates the robust selection objective above. The public
+  part has about 90 images: the rule and learned-filter submissions share 93 % of
+  their instances, so their 0.01 difference rests on a few dozen filaments.
 * Efficiency (end to end, measured by executing the pipeline notebook on one T4 GPU for the
-  180 test images): full ensemble 8.0 s (networks, flip TTA x4) + 0.5 s (post-processing) per
-  image; five EfficientNetV2-S networks 4.8 s + 0.5 s; a single network about 1.4 s + 0.5 s.
+  180 test images): ten networks 7.3-8.0 s (flip TTA x4) + about 0.5 s (post-processing) per
+  image, 8.0-8.5 s in total (three runs); five EfficientNetV2-S networks 4.7-4.8 s + 0.5 s
+  (two runs); a single network 1.1-1.5 s + 0.5 s.
 
 ## 5. Conclusion
 
@@ -171,7 +189,7 @@ well above the agreement between two human annotators (0.34). The decisive steps
 full 2048 px resolution (+0.05 over 512 px), exact component-level evaluation of the metric
 (which turns post-processing into a cheap, honest nested-CV problem) and conservative
 selection. Remaining errors are dominated by small, faint filaments on which annotators
-disagree. [to be finalised]
+disagree.
 
 ## Acknowledgement (required text, from the competition's Acknowledgment page)
 
@@ -182,7 +200,7 @@ from the National Oceanic and Atmospheric Administration. The GONG network of in
 the Big Bear Solar Observatory, High Altitude Observatory, Learmonth Solar Observatory, Udaipur Solar
 Observatory, Instituto de Astrofísica de Canarias, and Cerro Tololo Interamerican Observatory.
 
-## References (to be converted to BibTeX)
+## References (BibTeX: `docs/report/refs.bib`)
 
 * MAGFiLO: Manually Annotated GONG Filaments from H-Alpha Observations, Scientific Data (2024),
   doi:10.1038/s41597-024-03876-y.
@@ -193,8 +211,6 @@ Observatory, Instituto de Astrofísica de Canarias, and Cerro Tololo Interameric
 * K. He, X. Zhang, S. Ren, J. Sun. Deep Residual Learning for Image Recognition. CVPR 2016.
 * M. Tan, Q. V. Le. EfficientNetV2: Smaller Models and Faster Training. ICML 2021.
 * Q. Xie, M.-T. Luong, E. Hovy, Q. V. Le. Self-training with Noisy Student Improves ImageNet
-  Classification. CVPR 2020 (only if the semi-supervised students are used).
-* G. Hinton, O. Vinyals, J. Dean. Distilling the Knowledge in a Neural Network. arXiv:1503.02531, 2015
-  (only if used).
+  Classification. CVPR 2020.
 * J. W. Harvey et al. The Global Oscillation Network Group (GONG) Project. Science 272, 1284 (1996).
 * P. Iakubovskii. Segmentation Models Pytorch. GitHub, 2019. R. Wightman. PyTorch Image Models. GitHub, 2019.

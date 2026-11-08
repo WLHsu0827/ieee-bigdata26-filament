@@ -145,13 +145,14 @@ U-Net R34, 1024\,px full disk & 0.416 & 0.425$^a$ & 0.35\\
 U-Net R34, 2048\,px (5 folds) & 0.428 / 0.422 & 0.432 & --\\
 U-Net EffV2-S, 2048\,px (5 folds) & 0.438 / 0.432 & 0.440 & --\\
 \quad + learned filter (\emph{fast}) & -- & 0.444 & 0.38\\
-R34 + EffV2-S, 10 networks, rule & -- & 0.442 & 0.39$^b$\\
+R34 + EffV2-S, 10 networks, rule & -- & 0.443$^b$ & 0.39\\
 \quad + learned filter (\emph{full}) & -- & \textbf{0.447} & 0.38\\
 \midrule
 human annotator vs.\ annotator & \multicolumn{2}{c}{0.340} & --\\
 \bottomrule
 \end{tabular}\\[2pt]
-\footnotesize{$^a$nested over five sub-folds of fold 0. $^b$robust objective $r=0.77$; plain PQ: 0.38.}
+\footnotesize{$^a$nested over five sub-folds of fold 0. $^b$robust objective $r=0.77$; with plain PQ as
+objective: nested 0.442, LB 0.38.}
 \end{table}
 
 \textbf{Resolution and encoders.} Table~\ref{tab:results} shows that native resolution matters
@@ -190,7 +191,7 @@ plain PQ (0.39 vs.\ 0.38). The learned filter's cross-validated gain did not sho
 dozen filaments of about 90 images). We used the leaderboard only to confirm transfer, never to tune.
 
 \textbf{Efficiency and reproducibility.} Executing the pipeline notebook on one T4 GPU for the 180
-test images takes 7.4--8.0\,s (ten networks, flip TTA $\times4$) plus 0.5\,s (post-processing) per image in two
+test images takes 7.3--8.0\,s (ten networks, flip TTA $\times4$) plus about 0.5\,s (post-processing) per image in three
 runs; the \emph{fast} profile (five networks) takes 4.7--4.8\,+\,0.5\,s. The notebook reproduces the submission
 from the stored fp16 weights (agreement PQ 0.998 with the training-time predictions).
 
