@@ -70,15 +70,25 @@ sys.exit(max(rcs))
 '''
 
 
-def payload() -> str:
+def payload(kind: str = "full") -> str:
+    """Base64 zip of the sources. ``full``: package, scripts, configs, notebook generator, evaluation
+    files and small figures; ``report``: only the report sources and the figures ``main.tex`` uses
+    (Kaggle rejects kernel scripts above roughly 1 MB)."""
+    import re
+
+    report = ROOT / "docs" / "report"
+    if kind == "report":
+        used = set(re.findall(r"\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}", (report / "main.tex").read_text()))
+        files = (sorted(report.glob("*.tex")) + sorted(report.glob("*.bib")) + sorted(report.glob("*.py"))
+                 + [ROOT / "docs" / "figures" / u for u in sorted(used)])
+    else:
+        files = (sorted((ROOT / "filseg").rglob("*.py")) + sorted((ROOT / "scripts").glob("*.py"))
+                 + sorted((ROOT / "configs").glob("*.json")) + sorted((ROOT / "notebooks").glob("*.py"))
+                 + sorted((ROOT / "docs").glob("*.json"))
+                 + [p for p in sorted((ROOT / "docs" / "figures").glob("*.png")) if p.stat().st_size < 400_000])
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in (sorted((ROOT / "filseg").rglob("*.py")) + sorted((ROOT / "scripts").glob("*.py"))
-                  + sorted((ROOT / "configs").glob("*.json")) + sorted((ROOT / "notebooks").glob("*.py"))
-                  + sorted((ROOT / "docs").glob("*.json"))
-                  + sorted((ROOT / "docs" / "report").glob("*.tex")) + sorted((ROOT / "docs" / "report").glob("*.bib"))
-                  + sorted((ROOT / "docs" / "report").glob("*.py"))
-                  + [p for p in sorted((ROOT / "docs" / "figures").glob("*.png")) if p.stat().st_size < 400_000]):
+        for f in files:
             z.write(f, f.relative_to(ROOT).as_posix())
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
@@ -89,6 +99,7 @@ def main() -> None:
     ap.add_argument("--name", required=True)
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--gpu", action="store_true")
+    ap.add_argument("--payload", default="full", choices=["full", "report"], help="files embedded in the kernel")
     ap.add_argument("--sequential", action="store_true", help="run the :: separated commands one after another")
     ap.add_argument("--kernel-sources", nargs="*", default=[], help="other kernels whose output is mounted as input")
     ap.add_argument("--dataset-sources", nargs="*", default=[])
@@ -105,7 +116,7 @@ def main() -> None:
     commands.append(cur)
 
     args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "run.py").write_text(TEMPLATE.format(payload=payload(), commands=commands, sequential=args.sequential),
+    (args.out / "run.py").write_text(TEMPLATE.format(payload=payload(args.payload), commands=commands, sequential=args.sequential),
                                      encoding="utf-8")
     meta = {
         "id": f"{args.user}/{args.name}",
