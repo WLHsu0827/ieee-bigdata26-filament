@@ -125,9 +125,9 @@ U-Net R34, 512\,px full disk & 0.365 & -- & 0.30\\
 U-Net R34, 1024\,px full disk & 0.416 & 0.425$^a$ & 0.35\\
 U-Net R34, 2048\,px (5 folds) & 0.428 / 0.422 & 0.432 & --\\
 U-Net EffV2-S, 2048\,px (5 folds) & 0.438 / 0.432 & 0.440 & --\\
-\quad + learned filter (\emph{fast}) & -- & 0.444 & [TBD]\\
+\quad + learned filter (\emph{fast}) & -- & 0.444 & 0.38\\
 R34 + EffV2-S, 10 networks, rule & -- & 0.442 & 0.39$^b$\\
-\quad + learned filter (\emph{full}) & -- & \textbf{0.447} & [TBD]\\
+\quad + learned filter (\emph{full}) & -- & \textbf{0.447} & 0.38\\
 \midrule
 human annotator vs.\ annotator & \multicolumn{2}{c}{0.340} & --\\
 \bottomrule
@@ -173,7 +173,9 @@ Dice of overlapping pairs, one-to-many / many-to-one degrees, recall by filament
 model although the models predict as many filaments per test image as per validation image; the gap is
 consistent with sparser test labels. Stricter selections never transferred worse: the nested rules beat
 the grid-tuned rule of the 1024\,px model (0.35 vs.\ 0.34), and for the ensemble the robust objective beat
-plain PQ (0.39 vs.\ 0.38). We used the leaderboard only to confirm transfer, never to tune.
+plain PQ (0.39 vs.\ 0.38). The learned filter's cross-validated gain did not show on the public part
+(0.38; 93\,\% of its instances are shared with the rule's submission, so the difference rests on a few
+dozen filaments of about 90 images). We used the leaderboard only to confirm transfer, never to tune.
 
 \textbf{Efficiency and reproducibility.} Executing the pipeline notebook on one T4 GPU for the 180
 test images takes 7.4--8.0\,s (ten networks, flip TTA $\times4$) plus 0.5\,s (post-processing) per image in two

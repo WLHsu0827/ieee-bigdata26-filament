@@ -133,8 +133,8 @@ T4 GPU; five EfficientNetV2-S networks alone reach 0.444 at about 5 s per image.
 | U-Net ResNet34 | 512 (full disk) | 0.365 | - | 0.30 |
 | U-Net ResNet34 | 1024 (full disk) | 0.416 (nested over 5 sub-folds: 0.417; robust objective 0.425) | - | 0.34 |
 | U-Net ResNet34, disk norm | 2048 (768 crops) | 0.428 (mean of 5 folds 0.422) | 5 folds: 0.432 | - |
-| U-Net EfficientNetV2-S, disk norm | 2048 (768 crops) | 0.438 (mean of 5 folds 0.432) | 5 folds: 0.440 (rule) / 0.444 (learned filter) | [TBD] |
-| ensemble 2 x 5 folds | 2048 | - | 0.442 (rule) / **0.447** (learned filter) | 0.38 (rule, plain PQ) / 0.39 (rule, r = 0.77) / [TBD] (learned filter) |
+| U-Net EfficientNetV2-S, disk norm | 2048 (768 crops) | 0.438 (mean of 5 folds 0.432) | 5 folds: 0.440 (rule) / 0.444 (learned filter) | 0.38 (learned filter) |
+| ensemble 2 x 5 folds | 2048 | - | 0.442 (rule) / **0.447** (learned filter) | 0.38 (rule, plain PQ) / 0.39 (rule, r = 0.77) / 0.38 (learned filter) |
 
 (Fold-0 and fold-mean numbers use one fixed rule; "nested" numbers are pooled over the outer
 folds of a nested cross-validation of the post-processing on all 707 out-of-fold images.)
