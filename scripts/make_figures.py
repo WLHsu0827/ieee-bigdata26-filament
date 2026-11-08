@@ -210,7 +210,7 @@ def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
 
 
 def morphology(probs_npz: Path, post_json: Path, data_dir: Path, image_ids: list[str],
-               path: Path = FIG / "morphology.png", zoom: int = 520) -> Path:
+               path: Path = FIG / "morphology.png", zoom: int = 520, dpi: int = 120) -> Path:
     """Compact report figure: one zoom per image around its largest predicted filament, annotator
     outlines (one colour per annotator) above and predicted instances below."""
     import json
@@ -252,7 +252,7 @@ def morphology(probs_npz: Path, post_json: Path, data_dir: Path, image_ids: list
             axes[row, col].axis("off")
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
-    fig.savefig(path, dpi=200)
+    fig.savefig(path, dpi=dpi)
     plt.close(fig)
     return path
 
