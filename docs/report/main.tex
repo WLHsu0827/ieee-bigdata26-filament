@@ -110,6 +110,22 @@ rank. A candidate is kept if its prediction exceeds a threshold chosen on groupe
 predictions. The trees are exported to JSON, so inference needs only numpy.
 
 \section{Experiments}
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{evaluation_grid.png}
+\caption{Evaluation of the final configuration on the out-of-fold maps of all 707 training images (1,154
+annotator sets); the learned filter was fitted on these maps, so PQ 0.462 is optimistic (nested estimate
+0.447, Table~\ref{tab:results}). Top: IoU and Dice of overlapping predicted and annotated filaments, and
+matching degrees: how many predictions overlap an annotated filament (1:$n$; 1:0 = missed) and how many
+annotated filaments overlap a prediction ($n$:1; 0:1 = spurious). Bottom: recall by filament area and the
+cause of every error. Unmatched filaments are \emph{missed} (no overlapping prediction), \emph{partial} (the
+best prediction covers less than half), \emph{merged} with a neighbour, inside a prediction that is
+\emph{too large}, or \emph{fragmented} (the union of several predictions would match); false positives are
+\emph{isolated} or \emph{overlap} a filament with IoU $\le0.5$. Upper bounds: PQ if each annotator's
+fragments were grouped or all isolated false positives removed.}
+\label{fig:eval}
+\end{figure*}
+
 \begin{table}[t]
 \caption{PQ on the training images (fold 0 / mean of five folds with one fixed rule; nested CV over
 all 707 out-of-fold images) and public leaderboard (LB, about half of the test set).}
@@ -147,8 +163,9 @@ single annotator. Of the filaments without any overlapping prediction (25\,\%), 
 than 1,200\,px and 74\,\% contain probabilities above 0.5---the network sees them, but keeping them
 would cost more false positives than it gains. Fragmentation and merging are rare: 2.8\,\% of the annotated
 filaments overlap two or more predictions and 2.6\,\% of the predictions overlap two or more filaments
-(Fig.~\ref{fig:eval}). Even an oracle that groups fragments optimally across
-detection levels would gain only 0.003 PQ, whereas an oracle choosing each component's outline would
+(Fig.~\ref{fig:eval}). Grouping each annotator's fragments separately would add at most 0.013 PQ, but one
+output must serve all annotators: an oracle that picks the best grouping of components across detection
+levels gains only 0.003 (fold 0), whereas an oracle choosing each component's outline would
 gain 0.012: the remaining errors are mostly faint, small or annotator-specific filaments and outlines
 that decide whether a match crosses IoU 0.5 (Fig.~\ref{fig:morph}).
 
@@ -160,14 +177,6 @@ annotator); bottom: predicted instances. Left: a match; middle: a filament chain
 instances; right: the prediction follows a faint filament beyond the single annotator's outline.}
 \label{fig:morph}
 \end{figure}
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{evaluation.png}
-\caption{Out-of-fold evaluation of the final configuration (707 images, 1,154 annotator sets): IoU and
-Dice of overlapping pairs, one-to-many / many-to-one degrees, recall by filament size and error causes.}
-\label{fig:eval}
-\end{figure*}
 
 \textbf{Public leaderboard.} The public score is 0.82--0.88 of the nested validation score for every
 model although the models predict as many filaments per test image as per validation image; the gap is

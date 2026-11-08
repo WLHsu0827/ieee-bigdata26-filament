@@ -143,7 +143,9 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   with the plain rule, isolated false positives drop from 1,041 to 531. FN causes: 2,016 missed, 401 partial,
   310 too large, 295 merged, 111 fragmented. GT overlapping >= 2 predictions: 2.8 %; predictions overlapping
   >= 2 GT: 2.6 %. Mean IoU / Dice of overlapping pairs 0.606 / 0.736. `docs/evaluation*.json`, figures in
-  `docs/figures/evaluation*.png`.
+  `docs/figures/evaluation*.png` (the report uses the 2 x 3 `evaluation_grid.png`; re-run on Kaggle 11-08 with
+  identical numbers; `python scripts/make_figures.py evaluation-replot docs/evaluation.npz docs/evaluation.json
+  <out.png> grid` redraws it from the stored IoU / Dice arrays without recomputation).
 * Half-precision overflow (11-08): the EfficientNetV2-S networks occasionally produce non-finite logits under
   fp16 autocast (numpy "invalid value encountered in cast" when saving maps; K1 fold 0 and the first notebook
   run). `predict_batch` now recomputes such a TTA pass in fp32. Second reproducibility run (fil-nb-verify v2):
