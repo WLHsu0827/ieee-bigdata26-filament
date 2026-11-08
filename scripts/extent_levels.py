@@ -52,7 +52,13 @@ from filseg.postprocess import PostConfig, instances_from_prob, upsample  # noqa
 LEVELS = (0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7)
 EXTRA = ["mean_net0", "max_net0", "mean_net1", "max_net1", "mean_diff", "abs_mean_diff", "nn_dist",
          "n_conf_image"]
+EXTRA_NETS = EXTRA[:6]
+EXTRA_CONTEXT = EXTRA[6:]
 LEVEL_FEATURES = ["level", "frac_level", "log_area_level"]
+VARIANTS = {"rule": (None, False), "base": (FEATURES, False), "extra": (FEATURES + EXTRA, False),
+            "extra_nets": (FEATURES + EXTRA_NETS, False), "extra_context": (FEATURES + EXTRA_CONTEXT, False),
+            "levels": (FEATURES, True), "levels_extra": (FEATURES + EXTRA, True)}
+DEFAULT_VARIANTS = ["rule", "base", "extra", "levels", "levels_extra"]
 
 
 def _job(args) -> list[dict]:
@@ -245,13 +251,15 @@ def _decide(lv: Levels, pred: np.ndarray, rows: np.ndarray, margin: float, lam: 
     return lev, keep
 
 
-def nested(lv: Levels, feats: list[str], per_level: bool, r: float, inner_splits: int = 5) -> dict:
+def nested(lv: Levels, feats: list[str], per_level: bool, r: float, inner_splits: int = 5,
+           with_decisions: bool = False) -> dict:
     from sklearn.model_selection import GroupKFold
 
     lams = np.linspace(0.05, 0.6, 56)
     margins = [0.0, 0.01, 0.02, 0.05, np.inf] if per_level else [np.inf]
     all_images = set(lv.gt)
     pooled, chosen = np.zeros(4), []
+    keep_all, lev_all = np.zeros(len(lv.t), bool), np.full(len(lv.t), lv.i05)
     for k in sorted(set(lv.fold_of_image.values())):
         inner = np.flatnonzero(lv.fold != k)
         outer = np.flatnonzero(lv.fold == k)
@@ -272,12 +280,43 @@ def nested(lv: Levels, feats: list[str], per_level: bool, r: float, inner_splits
         mask_outer = np.zeros(len(lv.t), bool)
         mask_outer[outer] = True
         pooled += lv.counts(keep, lev, mask_outer, all_images - inner_imgs)
+        keep_all[outer], lev_all[outer] = keep[outer], lev[outer]
         moved = int((lev[outer][keep[outer]] != lv.i05).sum())
         chosen.append({"fold": int(k), "margin": float(m), "lambda": round(float(lam), 3), "kept": int(keep[outer].sum()),
                        "kept_with_other_level": moved})
     s, tp, fp, fn = pooled
-    return {"nested_pq": pq_sparse(s, tp, fp, fn), "objective": pq_sparse(s, tp, fp, fn, r), "tp": int(tp),
-            "fp": int(fp), "fn": int(fn), "folds": chosen}
+    out = {"nested_pq": pq_sparse(s, tp, fp, fn), "objective": pq_sparse(s, tp, fp, fn, r), "tp": int(tp),
+           "fp": int(fp), "fn": int(fn), "folds": chosen}
+    if with_decisions:
+        out.update(keep=keep_all, lev=lev_all)
+    return out
+
+
+def per_image_counts(lv: Levels, keep: np.ndarray, lev: np.ndarray) -> pd.DataFrame:
+    """Per image: sum of matched IoU, TP, FP, FN of a (keep, level) decision."""
+    ok = keep & (lv.a[np.arange(len(lev)), lev] > 0)
+    rows = np.arange(len(lev))
+    df = pd.DataFrame({"image_id": lv.img, "s": np.where(ok, lv.v[rows, lev], 0.0),
+                       "tp": np.where(ok, lv.nm[rows, lev], 0), "fp": np.where(ok, lv.ne - lv.nm[rows, lev], 0)})
+    per = df.groupby("image_id")[["s", "tp", "fp"]].sum().reindex(sorted(lv.gt), fill_value=0)
+    per["fn"] = [lv.gt[i] for i in per.index] - per["tp"]
+    return per
+
+
+def paired_bootstrap(a: pd.DataFrame, b: pd.DataFrame, draws: int = 4000, seed: int = 0) -> dict:
+    """Difference of pooled PQ (b - a) under resampling of images with replacement."""
+    rng = np.random.default_rng(seed)
+    xa, xb = a[["s", "tp", "fp", "fn"]].to_numpy(float), b[["s", "tp", "fp", "fn"]].to_numpy(float)
+
+    def pq(x):
+        return x[0] / max(x[1] + 0.5 * x[2] + 0.5 * x[3], 1e-9)
+
+    d = []
+    for _ in range(draws):
+        i = rng.integers(0, len(xa), len(xa))
+        d.append(pq(xb[i].sum(0)) - pq(xa[i].sum(0)))
+    d = np.array(d)
+    return {"diff": pq(xb.sum(0)) - pq(xa.sum(0)), "sd": float(d.std()), "p_le_0": float((d <= 0).mean())}
 
 
 def nested_rule(lv: Levels, r: float) -> dict:
@@ -304,17 +343,71 @@ def analyse(args) -> None:
     print(f"{len(lv.t)} candidates on {len(lv.gt)} images, levels {lv.levels}", flush=True)
     res = {"oracle_outline_0.5": lv.oracle(False), "oracle_best_outline": lv.oracle(True)}
     print(json.dumps(res), flush=True)
-    variants = {"rule": (None, False), "base": (FEATURES, False), "extra": (FEATURES + EXTRA, False),
-                "levels": (FEATURES, True), "levels_extra": (FEATURES + EXTRA, True)}
+    variants = {k: VARIANTS[k] for k in (args.only or DEFAULT_VARIANTS)}
     for r in args.r:
         for name, (feats, per_level) in variants.items():
-            if args.only and name not in args.only:
-                continue
             t0 = time.time()
             out = nested_rule(lv, r) if name == "rule" else nested(lv, feats, per_level, r, args.inner_splits)
             res[f"{name}@r{r}"] = out
             print(f"{name:13s} r={r}: nested PQ {out['nested_pq']:.4f} (TP {out['tp']}, FP {out['fp']}, "
                   f"FN {out['fn']}) {time.time() - t0:.0f} s; folds {out['folds']}", flush=True)
+    if args.out:
+        Path(args.out).write_text(json.dumps(res, indent=1))
+
+
+def compare(args) -> None:
+    """Paired bootstrap over images of two learned variants' nested decisions."""
+    with open(args.table, "rb") as fh:
+        data = pickle.load(fh)
+    lv = Levels(data)
+    for r in args.r:
+        per = {}
+        for name in (args.a, args.b):
+            feats, per_level = VARIANTS[name]
+            out = nested(lv, feats, per_level, r, args.inner_splits, with_decisions=True)
+            per[name] = per_image_counts(lv, out["keep"], out["lev"])
+            print(f"{name} r={r}: nested PQ {out['nested_pq']:.4f}", flush=True)
+        print(f"{args.b} - {args.a} (r={r}): {paired_bootstrap(per[args.a], per[args.b])}", flush=True)
+
+
+def compare_tables(args) -> None:
+    """Paired bootstrap over images: the same variant on two candidate tables (e.g. two ensembles)."""
+    lvs = []
+    for path in args.tables:
+        with open(path, "rb") as fh:
+            data = pickle.load(fh)
+        lv = Levels(data)
+        lv.post = data["post"]
+        lvs.append(lv)
+    if set(lvs[0].gt) != set(lvs[1].gt):
+        raise SystemExit("the tables cover different images")
+    res = {"tables": [str(p) for p in args.tables], "variant": args.variant}
+    for r in args.r:
+        per, pqs = [], []
+        for lv in lvs:
+            if args.variant == "rule":
+                from filseg.components import ComponentSet, nested_select
+
+                t = lv.t.copy()
+                t["v"], t["n_matched"] = t["v@0.50"], t["nm@0.50"]
+                t["n_entries"] = np.where(t["a@0.50"].to_numpy() == 0, 0, t["n_entries"])
+                cs = ComponentSet(t, sum(lv.gt.values()), PostConfig(threshold=0.25), dict(lv.gt))
+                out = nested_select({"shape": cs}, lv.fold_of_image, r=r)
+                keep = np.zeros(len(t), bool)
+                for ch in out["fold_choices"]:
+                    rows = np.isin(lv.img, [i for i, f in lv.fold_of_image.items() if f == ch["fold"]])
+                    keep |= rows & cs.rule(**ch["rule"])
+                lev = np.full(len(t), lv.i05)
+                pqs.append(out["nested_pq"])
+            else:
+                feats, per_level = VARIANTS[args.variant]
+                out = nested(lv, feats, per_level, r, args.inner_splits, with_decisions=True)
+                keep, lev = out["keep"], out["lev"]
+                pqs.append(out["nested_pq"])
+            per.append(per_image_counts(lv, keep, lev))
+        boot = paired_bootstrap(per[0], per[1])
+        res[f"r{r}"] = {"nested_pq": pqs, **{k: float(v) for k, v in boot.items()}}
+        print(f"{args.variant} r={r}: {pqs[0]:.4f} -> {pqs[1]:.4f}; paired {boot}", flush=True)
     if args.out:
         Path(args.out).write_text(json.dumps(res, indent=1))
 
@@ -335,11 +428,23 @@ def main() -> None:
     a = sub.add_parser("analyse")
     a.add_argument("table")
     a.add_argument("--r", type=float, nargs="+", default=[1.0, 0.77])
-    a.add_argument("--only", nargs="*", default=None, help="variants to run (default: all)")
+    a.add_argument("--only", nargs="*", default=None, help=f"variants to run (default: {' '.join(DEFAULT_VARIANTS)})")
     a.add_argument("--inner-splits", type=int, default=5)
     a.add_argument("--out", default=None)
+    c = sub.add_parser("compare")
+    c.add_argument("table")
+    c.add_argument("--a", default="base")
+    c.add_argument("--b", default="extra")
+    c.add_argument("--r", type=float, nargs="+", default=[1.0, 0.77])
+    c.add_argument("--inner-splits", type=int, default=5)
+    ct = sub.add_parser("compare-tables")
+    ct.add_argument("tables", nargs=2, help="two candidate tables on the same images (baseline first)")
+    ct.add_argument("--variant", default="base", choices=sorted(VARIANTS))
+    ct.add_argument("--r", type=float, nargs="+", default=[1.0, 0.77])
+    ct.add_argument("--inner-splits", type=int, default=5)
+    ct.add_argument("--out", default=None)
     args = ap.parse_args()
-    build(args) if args.cmd == "build" else analyse(args)
+    {"build": build, "analyse": analyse, "compare": compare, "compare-tables": compare_tables}[args.cmd](args)
 
 
 if __name__ == "__main__":

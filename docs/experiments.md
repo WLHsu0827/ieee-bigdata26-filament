@@ -166,6 +166,19 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   SD 0.012 (5-95 %: 0.423-0.463 for rule A, whose 707-image PQ is 0.444), so the public leaderboard (about
   90 test images) cannot resolve differences of a few thousandths; the paired difference of two configurations
   on the same subsets has SD 0.004. Decisions therefore rest on nested CV over all 707 images.
+* Direction 1 of the 11-08 push (`scripts/extent_levels.py`, Kaggle CPU kernel fil-d1; candidates of the final
+  shape t 0.25, c0, all components, 9,394 on 707 images; nested CV over the CV folds, learned filter as in
+  production): (i) **per-candidate outline level** (one regressor over candidate x level rows predicts the per-entry
+  matched IoU at levels 0.30-0.70; a candidate leaves outline 0.5 only if another level is predicted better by a
+  margin chosen on inner folds): nested 0.4478 / 0.4460 (r = 1 / 0.77) vs 0.4473 / 0.4472 for the current filter
+  -- no gain, although the in-sample oracle that knows each candidate's best outline would reach 0.538 vs 0.518 at
+  a fixed outline: the right outline depends on the annotators and is not predictable from the map. (ii) **extra
+  evidence** for the filter (mean / peak probability under the ResNet34 and the EfficientNetV2-S network separately
+  and their difference, distance to the nearest candidate, number of confident candidates): 0.4497 / 0.4488
+  (+0.002); paired bootstrap over images (local re-run, sklearn 1.9): +0.0026, SD 0.0012 at r = 1 (98.5 % of
+  resamples positive), +0.0012, SD 0.0014 at r = 0.77. The per-network evidence carries it (0.4497 / 0.4489 alone;
+  context alone 0.4481 / 0.4478). Caveat before any adoption: out of fold the per-network features come from single
+  networks, in the submission from averages of five per encoder. Rule on the same candidates: 0.4430 / 0.4432.
 * Half-precision overflow (11-08): the EfficientNetV2-S networks occasionally produce non-finite logits under
   fp16 autocast (numpy "invalid value encountered in cast" when saving maps; K1 fold 0 and the first notebook
   run). `predict_batch` now recomputes such a TTA pass in fp32. Second reproducibility run (fil-nb-verify v2):
