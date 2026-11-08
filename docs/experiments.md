@@ -186,6 +186,32 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   0.91 for both (two vs two 0.87-0.88). The extra evidence therefore shifts more between out-of-fold and submission
   conditions than the current features, which puts its small nested gain at risk: **not adopted** (finals A / B
   unchanged).
+* GPU pilot fil-gpu-p1 (11-08, pool, T4 x2, 2.60 h): fold 0 only, same recipe as K1 (2048 px, 768 crops, EMA,
+  TTA4, fixed rule `post_c1_nested.json` for the single-model number).
+  | model (fold 0) | epochs (budget) | val PQ, fixed rule | inference per image and network |
+  |---|---|---|---|
+  | ResNet34 (K1) | 30 (1.48 h) | 0.4276 | 1.13 s |
+  | EfficientNetV2-S (K1) | 21 (1.48 h) | 0.4375 | 1.31-1.48 s |
+  | EfficientNetV2-M, bs 4 | 24 (2.6 h) | 0.4383 | 1.66 s |
+  | EfficientNetV2-S, `--small-weight 0.5` | 22 (1.48 h) | 0.4383 | 1.31 s |
+  A larger encoder (+0.0008 at 1.75x the training time) and the small-filament / boundary weighting (+0.0008)
+  are within noise as single models; ensemble-level gate below. GPU 1 first re-predicted all 707 OOF images from
+  the committed weights with TTA x4 and x8 in one pass (2.5-3.0 s per image and network for x8).
+* Gate analysis of the pilot (11-08, Kaggle CPU kernel fil-gate, `extent_levels.py build --subfolds 5` and
+  `compare-tables`; fold 0 = 142 images, nested CV over 5 sub-folds; paired bootstrap over images, 4,000 draws).
+  Differences to the current pair ResNet34 + EfficientNetV2-S (learned filter r = 1 / 0.77; rule r = 1 / 0.77):
+  | fold-0 ensemble | learned filter | rule |
+  |---|---|---|
+  | R34 + V2-S (current; nested PQ) | 0.4383 / 0.4396 | 0.4452 / 0.4492 |
+  | + V2-M (three networks) | +0.0077 / +0.0054 (P <= 0: 0.03 / 0.09) | +0.0091 / +0.0031 (0.01 / 0.15) |
+  | V2-M replaces R34 | +0.0085 / +0.0068 (0.03 / 0.07) | +0.0110 / +0.0038 (0.00 / 0.14) |
+  | V2-M replaces V2-S | +0.0077 / +0.0012 | +0.0029 / -0.0008 |
+  | small-weight V2-S replaces V2-S | +0.0026 / 0.0000 | -0.0063 / -0.0045 |
+  Single networks (nested): V2-M vs V2-S +0.004 to +0.016, small-weight V2-S vs V2-S +0.004 to +0.010 -- the
+  single-network comparisons are noisy (the small-weight model looks better alone but not in the pair).
+  **V2-M passes the pre-registered gate** (fold-0 ensemble >= +0.005 with the learned filter); the small-filament
+  weighting does not. **TTA x8 vs x4** on all 707 images (same committed weights): learned filter +0.0024 / +0.0009
+  (P <= 0: 0.03 / 0.26), rule +0.0031 / +0.0030 (0.02 / 0.01), for twice the network time.
 * Half-precision overflow (11-08): the EfficientNetV2-S networks occasionally produce non-finite logits under
   fp16 autocast (numpy "invalid value encountered in cast" when saving maps; K1 fold 0 and the first notebook
   run). `predict_batch` now recomputes such a TTA pass in fp32. Second reproducibility run (fil-nb-verify v2):
