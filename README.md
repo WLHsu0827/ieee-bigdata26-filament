@@ -115,11 +115,11 @@ python scripts/run_notebook.py --profile full --weights weights/manifest.json --
 | `filseg/analysis.py` | error analysis (by size, aggregation, matching degrees, error causes with PQ upper bounds) |
 | `filseg/infer.py` | inference / ensembling from saved weights |
 | `filseg/classical.py` | traditional (non-learning) darkness-threshold baseline |
-| `scripts/` | label agreement, OOF analysis, rule selection, model comparison, ensembling, figures, checks; optional semi-supervised tools (`fetch_gong.py` unlabelled archive images, `pseudo_label.py` teacher maps, `chain.py`) |
+| `scripts/` | command-line tools for reproduction, model building, the analyses behind the report and the experiments that were not adopted; index in [`scripts/README.md`](scripts/README.md) |
 | `configs/` | post-processing configurations: `post_final_rule.json` (final submission A), `post_final_full.json` (final submission B, notebook default), `post_final_fast.json` (fast profile) |
 | `notebooks/` | `pipeline.ipynb` (executed) and its generator |
 | `weights/` | the ten fp16 networks (one per encoder and fold) and `manifest.json` (files, SHA-256, training arguments, post-processing of both profiles) |
-| `docs/` | experiment log, report, figures, evaluation numbers, list of the external images |
+| `docs/` | experiment log, report, figures, evaluation numbers, paired comparisons of the pilot experiments (`gate/`, `gate3/`), list of the external images |
 | `kaggle/` | builders for self-contained Kaggle kernels and Colab notebooks |
 | `tests/` | unit tests (`python -m pytest tests`) |
 
