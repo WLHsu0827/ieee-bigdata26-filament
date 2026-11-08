@@ -6,6 +6,7 @@ data/
 runs/
 *.zip
 *.npz
+!docs/evaluation*.npz
 *.pt
 !weights/*.pt
 # never commit credentials
