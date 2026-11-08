@@ -57,6 +57,12 @@ pip install -r requirements.txt
 jupyter nbconvert --to notebook --execute notebooks/pipeline.ipynb   # or open and Run All
 ```
 
+Apart from `pip install`, nothing is downloaded: the networks are built without pretrained
+weights and loaded from `weights/`. `python scripts/check_weights.py` checks this on a CPU
+without the competition data (about half a minute): it compares every weight file with the
+SHA-256 in `weights/manifest.json`, loads and runs all ten networks with network access
+blocked, and applies every post-processing configuration to a synthetic probability map.
+
 Two profiles (variable `PROFILE` in the notebook, or `FILSEG_PROFILE`), measured
 end to end on one T4 GPU for the 180 test images (`scripts/run_notebook.py`):
 
@@ -110,7 +116,7 @@ python scripts/run_notebook.py --profile full --weights weights/manifest.json --
 | `filseg/infer.py` | inference / ensembling from saved weights |
 | `filseg/classical.py` | traditional (non-learning) darkness-threshold baseline |
 | `scripts/` | label agreement, OOF analysis, rule selection, model comparison, ensembling, figures, checks; optional semi-supervised tools (`fetch_gong.py` unlabelled archive images, `pseudo_label.py` teacher maps, `chain.py`) |
-| `configs/` | post-processing configurations (`post_final_full.json` / `post_final_fast.json` = submission) |
+| `configs/` | post-processing configurations: `post_final_rule.json` (final submission A), `post_final_full.json` (final submission B, notebook default), `post_final_fast.json` (fast profile) |
 | `notebooks/` | `pipeline.ipynb` (executed) and its generator |
 | `weights/` | the ten fp16 networks (one per encoder and fold) and `manifest.json` (files, SHA-256, training arguments, post-processing of both profiles) |
 | `docs/` | experiment log, report, figures, evaluation numbers, list of the external images |

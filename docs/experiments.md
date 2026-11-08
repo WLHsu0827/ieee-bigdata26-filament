@@ -155,6 +155,11 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   matched at IoU > 0.5), more than two-network selections of different folds agree with each other (0.87). The
   transfer is therefore benign: the ten-network selection is a slightly more conservative consensus of the
   two-network ones, inside their fold-to-fold range; no correction applied.
+* Offline check (11-08, `scripts/check_weights.py`): the ten weight files match the SHA-256 in the manifest, all
+  networks load and run on the CPU with network access blocked (no pretrained or other downloads at inference;
+  the verification kernels had internet enabled, so this was not covered before), and the three post-processing
+  configurations each keep 3 of 4 synthetic ridges; 25 s on two CPU cores. The notebook's code cells make no
+  network calls.
 * Half-precision overflow (11-08): the EfficientNetV2-S networks occasionally produce non-finite logits under
   fp16 autocast (numpy "invalid value encountered in cast" when saving maps; K1 fold 0 and the first notebook
   run). `predict_batch` now recomputes such a TTA pass in fp32. Second reproducibility run (fil-nb-verify v2):
