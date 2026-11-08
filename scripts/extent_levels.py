@@ -489,7 +489,7 @@ def test_shift(args) -> None:
 
     from cli_utils import expand
 
-    with open(args.table, "rb") as fh:
+    with open(expand([args.table])[0], "rb") as fh:
         data = pickle.load(fh)
     lv = Levels(data)
     cfg = PostConfig(**data["post"])
