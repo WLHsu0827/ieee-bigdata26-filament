@@ -46,12 +46,13 @@ CONFIG = """RUN = {run!r}
 JOBS = {jobs!r}  # (name, filseg.train arguments), run one after another
 SYNC_MINUTES = 20  # upload the checkpoint at most this often
 DEFAULT_KAGGLE_USER = {user!r}  # public Kaggle user name; override with the optional secret KAGGLE_USERNAME
+PIP_PACKAGES = {pip!r}  # network packages pinned to requirements.txt, so the weights load in the final pipeline
 """
 
 SETUP = r"""import os, subprocess, sys, json, time, shutil, threading, base64, io, zipfile, getpass
 from pathlib import Path
 print(subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True).stdout)
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "kaggle", "segmentation-models-pytorch", "pycocotools"], check=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "kaggle", "pycocotools", *PIP_PACKAGES], check=True)
 
 def _secret(name):
     try:
@@ -173,6 +174,20 @@ def cell(kind: str, src: str) -> dict:
     return c
 
 
+def pinned_packages(names=("segmentation-models-pytorch", "timm")) -> list[str]:
+    """``name==version`` of the network packages, from requirements.txt."""
+    pins = {}
+    for line in (ROOT / "requirements.txt").read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if "==" in line:
+            name, version = line.split("==", 1)
+            pins[name.strip().lower()] = f"{name.strip()}=={version.strip()}"
+    missing = [n for n in names if n not in pins]
+    if missing:
+        raise SystemExit(f"requirements.txt pins no version for {missing}")
+    return [pins[n] for n in names]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True, help="run name; results go to the private dataset fil-colab-<run>")
@@ -189,7 +204,7 @@ def main() -> None:
                      "kernelspec": {"name": "python3", "display_name": "Python 3"},
                      "language_info": {"name": "python"}},
         "cells": [cell("markdown", INTRO.format(run=a.run)),
-                  cell("code", CONFIG.format(run=a.run, jobs=jobs, user=a.kaggle_user)),
+                  cell("code", CONFIG.format(run=a.run, jobs=jobs, user=a.kaggle_user, pip=pinned_packages())),
                   cell("code", SETUP), cell("code", DATA),
                   cell("code", CODE.format(payload=payload())),
                   cell("code", RESUME), cell("code", TRAIN)],
