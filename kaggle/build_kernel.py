@@ -85,7 +85,8 @@ def payload(kind: str = "full") -> str:
         files = (sorted((ROOT / "filseg").rglob("*.py")) + sorted((ROOT / "scripts").glob("*.py"))
                  + sorted((ROOT / "configs").glob("*.json")) + sorted((ROOT / "notebooks").glob("*.py"))
                  + sorted((ROOT / "docs").glob("*.json"))
-                 + [p for p in sorted((ROOT / "docs" / "figures").glob("*.png")) if p.stat().st_size < 400_000])
+                 + [ROOT / "docs" / "figures" / n for n in ("pipeline.png", "evaluation.png")
+                    if (ROOT / "docs" / "figures" / n).exists()])  # the figures the notebook displays
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in files:
