@@ -462,6 +462,26 @@ def test_external_min_gaps():
     assert got == [2, 9, 5, 10]
 
 
+def test_ensemble_shift_agreement():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from ensemble_shift import agreement
+
+    la = np.zeros((50, 50), np.int32)
+    la[0:10, 0:10] = 1
+    la[20:30, 20:30] = 2
+    lb = np.zeros_like(la)
+    lb[0:10, 2:12] = 1    # IoU 80 / 120 with instance 1 of la: a match
+    lb[20:30, 26:36] = 2  # IoU 40 / 160 with instance 2: no match
+    lb[40:45, 40:45] = 3  # no overlap
+    matched, sum_iou = agreement(la, lb)
+    assert matched == 1 and sum_iou == pytest.approx(2 / 3)
+    assert agreement(lb, la) == (matched, pytest.approx(sum_iou))
+    assert agreement(la, np.zeros_like(la)) == (0, 0.0)
+
+
 def test_scorer_export_matches_sklearn_and_filters_components():
     from sklearn.ensemble import HistGradientBoostingRegressor
 

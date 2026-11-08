@@ -81,7 +81,10 @@ warm-up). Five folds grouped by image, 1.3--1.5\,h per fold on one T4 GPU.
 ($\times4$); the ten fold networks are averaged. Both encoders share the same five folds, so the
 out-of-fold map of a training image, used for all selection and evaluation below, averages only the
 two networks that did not see it (one for the \emph{fast} profile): the out-of-fold numbers describe a
-smaller ensemble than the submission, and the selection is transferred to the ten-network average.
+smaller ensemble than the submission, and the selection is transferred to the ten-network average. On the
+test images this transfer is benign: with the same selection the ten-network average keeps 3--4\,\% fewer
+instances than the five two-network averages, inside their fold-to-fold range, and agrees with each of them
+at a PQ of 0.91, more than two-network selections of different folds agree with each other (0.87).
 
 \textbf{Instances and an exact decomposition of PQ.} Instances are the 8-connected components of the
 thresholded map after hole filling. Because predicted instances are disjoint, a component $c$ matches

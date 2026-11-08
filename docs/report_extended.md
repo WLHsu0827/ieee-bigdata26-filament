@@ -91,7 +91,13 @@ leaderboard 0.39) and with the learned filter (0.38).
   of both encoders. Both encoders use the same five folds, so the out-of-fold
   map of a training image, on which all selection and evaluation below is done,
   averages the two networks that did not see it (one for the fast profile); the
-  submission averages all ten.
+  submission averages all ten. A label-free check on the 180 test images
+  (`scripts/ensemble_shift.py`) shows that this transfer is benign: with the same
+  post-processing the ten-network average keeps 3-4 % fewer instances than the
+  two-network averages (5.95 vs 6.21 per image for the rule, 5.81 vs 6.02 for the
+  learned filter; fold range 5.75-6.39) and agrees with each of them at a PQ-style
+  score of 0.91, more than two-network selections of different folds agree with
+  each other (0.87).
 * **Instances.** Threshold the probability map (0.25 for the ten-network
   ensemble; 0.3 followed by a closing of radius 4 px for the five-network fast
   profile), fill holes, take 8-connected components.

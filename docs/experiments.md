@@ -146,6 +146,15 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   `docs/figures/evaluation*.png` (the report uses the 2 x 3 `evaluation_grid.png`; re-run on Kaggle 11-08 with
   identical numbers; `python scripts/make_figures.py evaluation-replot docs/evaluation.npz docs/evaluation.json
   <out.png> grid` redraws it from the stored IoU / Dice arrays without recomputation).
+* Ensemble-size shift (11-08, label-free, `scripts/ensemble_shift.py` on the K1 test maps; summary in
+  `docs/ensemble_shift.json`): selection is tuned on out-of-fold maps that average only the two networks of a
+  fold, the submission averages ten. On the 180 test images, with the same configuration, the ten-network
+  average keeps 5.95 instances per image vs 6.21 for the five two-network averages (range 5.87-6.39; -4 %;
+  area -3 %) for the rule of submission A, and 5.81 vs 6.02 (5.75-6.14; -3 %; area -2 %) for the learned filter
+  of submission B. It agrees with each two-network selection at a PQ-style score of 0.91 (96 % of its instances
+  matched at IoU > 0.5), more than two-network selections of different folds agree with each other (0.87). The
+  transfer is therefore benign: the ten-network selection is a slightly more conservative consensus of the
+  two-network ones, inside their fold-to-fold range; no correction applied.
 * Half-precision overflow (11-08): the EfficientNetV2-S networks occasionally produce non-finite logits under
   fp16 autocast (numpy "invalid value encountered in cast" when saving maps; K1 fold 0 and the first notebook
   run). `predict_batch` now recomputes such a TTA pass in fp32. Second reproducibility run (fil-nb-verify v2):

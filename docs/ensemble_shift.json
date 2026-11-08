@@ -1,0 +1,50 @@
+{
+ "description": "Label-free ensemble-size shift on the test images (scripts/ensemble_shift.py on the K1 test maps): the same post-processing applied to the ten-network average and to the five two-network (per-fold) averages; rule = configs/post_final_rule.json (submission A), full = configs/post_final_full.json (submission B).",
+ "images": 180,
+ "rule": {
+  "instances_per_image_ten": 5.95,
+  "instances_per_image_two": 6.213333333333334,
+  "instances_per_image_two_range": [
+   5.866666666666666,
+   6.388888888888889
+  ],
+  "area_ratio_ten_vs_two": 0.9712389909341919,
+  "ten_vs_two": {
+   "matched_of_ten": 0.9570494864612511,
+   "matched_of_two": 0.9172084756566715,
+   "pq": 0.9090343085985039,
+   "pq_range": [
+    0.8976466536694888,
+    0.9183429114704188
+   ]
+  },
+  "two_vs_two_pq": 0.8660365109865982,
+  "two_vs_two_pq_range": [
+   0.8575286514833282,
+   0.8779464392684635
+  ]
+ },
+ "full": {
+  "instances_per_image_ten": 5.811111111111111,
+  "instances_per_image_two": 6.016666666666667,
+  "instances_per_image_two_range": [
+   5.75,
+   6.138888888888889
+  ],
+  "area_ratio_ten_vs_two": 0.9819356021028188,
+  "ten_vs_two": {
+   "matched_of_ten": 0.9558317399617591,
+   "matched_of_two": 0.9234892637774502,
+   "pq": 0.9101722740430838,
+   "pq_range": [
+    0.9020560460654398,
+    0.9171468830750843
+   ]
+  },
+  "two_vs_two_pq": 0.872959605066203,
+  "two_vs_two_pq_range": [
+   0.8626004815976879,
+   0.8847097524604157
+  ]
+ }
+}
