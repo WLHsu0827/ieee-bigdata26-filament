@@ -22,6 +22,7 @@ scored separately. LB = public leaderboard (~50 % of the test images).
 | K1-ens-r1 | 11-08 | same ensemble; rule by nested CV on all 707 OOF images, plain PQ (t 0.30, no closing, area >= 200, mean >= 0.85, peak >= 0.99, outline 0.5; same rule in 4 / 5 outer folds) | nested **0.4422** (in-sample 0.4444) | 0.38 | 6.6 filaments per test image; learned filter on this shape: nested 0.4455 vs rule 0.4441 |
 | K1-ens-r077 | 11-08 | same ensemble; rule by nested CV on all 707 OOF images with the robust objective r = 0.77 (t 0.25, no closing, no area minimum, mean >= 0.85, peak >= 0.99, outline 0.5) | nested **0.4426** (objective 0.389) | **0.39** (rank 306 / 1,419) | 6.1 filaments per test image; learned filter on this shape: nested 0.4472 vs rule 0.4432 |
 | NB-full / NB-fast / NB-learned-r1 | 11-08 | pipeline notebook outputs from the committed weights: 10 networks + learned filter (r = 0.77); 5 EfficientNetV2-S + own learned filter; 10 networks + learned filter fitted with plain PQ | nested 0.4470 / 0.4440 / 0.4462 | 0.38 / 0.38 / 0.38 | the learned filter's CV gain (+0.004) does not show on the public part; 93 % of the instances are shared with the rule submission (LB 0.39), so the difference rests on a few dozen filaments of ~90 images |
+| FINAL-A | 11-08 | pipeline notebook (committed weights), full profile, variant `rule` written from the same maps: 10 networks + robust nested-CV rule (t 0.25, mean >= 0.85, peak >= 0.99, outline 0.5) | nested 0.4426 | **0.39** | 1,071 filaments; 1,071 of 1,072 identical to K1-ens-r077; 8.1 s/image for both files (fil-nb-verify v3) |
 
 ### Notes on E1 (11-06)
 
@@ -150,3 +151,7 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   instance), no warnings; full 7.95 s/image (7.40 + 0.53), fast 5.23 s/image (4.66 + 0.54). The executed
   notebook of this run is committed as `notebooks/pipeline.ipynb`; the 10 fp16 weights (452 MB, SHA-256 in
   `weights/manifest.json`) are committed in `weights/`.
+* Final pair (agreed 11-08): A = 10 networks + robust rule (public 0.39, best on the public part) and
+  B = 10 networks + learned filter (public 0.38, best in nested CV 0.447 vs 0.443; notebook default). Both
+  files come from one execution of `notebooks/pipeline.ipynb` (committed with the outputs of that run,
+  fil-nb-verify v3): `submission.csv` (B) and `submission_rule.csv` (A).
