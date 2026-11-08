@@ -51,6 +51,7 @@ available, recomputes the hold-out PQ, IoU / Dice distributions and
 one-to-many / many-to-one statistics.
 
 ```bash
+git clone --depth 1 <repository URL>   # ~0.5 GB, mostly the ten weight files (43-47 MB each)
 pip install -r requirements.txt
 jupyter nbconvert --to notebook --execute notebooks/pipeline.ipynb   # or open and Run All
 ```
