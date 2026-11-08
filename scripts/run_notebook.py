@@ -71,6 +71,8 @@ def main() -> None:
         weights = local
     shutil.copytree(ROOT / "filseg", work / "filseg", ignore=shutil.ignore_patterns("__pycache__"))
     (work / "notebooks").mkdir(parents=True)
+    if not (ROOT / "notebooks" / "pipeline.ipynb").exists():  # e.g. a Kaggle payload ships only the generator
+        subprocess.run([sys.executable, str(ROOT / "notebooks" / "build_pipeline_notebook.py")], check=True)
     shutil.copy(ROOT / "notebooks" / "pipeline.ipynb", work / "notebooks" / "pipeline.ipynb")
     if (ROOT / "docs").exists():
         shutil.copytree(ROOT / "docs", work / "docs")

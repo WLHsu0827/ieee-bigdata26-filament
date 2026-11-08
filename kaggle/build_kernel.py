@@ -74,7 +74,7 @@ def payload() -> str:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in (sorted((ROOT / "filseg").rglob("*.py")) + sorted((ROOT / "scripts").glob("*.py"))
-                  + sorted((ROOT / "configs").glob("*.json")) + sorted((ROOT / "notebooks").glob("*.ipynb"))
+                  + sorted((ROOT / "configs").glob("*.json")) + sorted((ROOT / "notebooks").glob("*.py"))
                   + sorted((ROOT / "docs").glob("*.json"))
                   + sorted((ROOT / "docs" / "report").glob("*.tex")) + sorted((ROOT / "docs" / "report").glob("*.bib"))
                   + sorted((ROOT / "docs" / "report").glob("*.py"))
