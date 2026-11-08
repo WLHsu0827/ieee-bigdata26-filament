@@ -49,12 +49,26 @@ def main() -> None:
     ap.add_argument("--workdir", type=Path, default=None)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--variant", action="append", default=[],
+                    help="NAME=POST_JSON added to the manifest's variants (as scripts/make_weights.py --variant)")
     args = ap.parse_args()
 
     weights = expand([args.weights])[0].parent
     work = args.workdir or Path(f"/tmp/repo_{args.profile}")
     if work.exists():
         shutil.rmtree(work)
+    if args.variant:  # weights folder with links to the checkpoints and an extended manifest
+        local = work.parent / f"weights_{args.profile}"
+        if local.exists():
+            shutil.rmtree(local)
+        local.mkdir(parents=True)
+        for f in weights.glob("*.pt"):
+            (local / f.name).symlink_to(f)
+        manifest = json.loads((weights / "manifest.json").read_text())
+        manifest.setdefault("variants", {}).update(
+            {name: json.loads(Path(p).read_text()) for name, p in (v.split("=", 1) for v in args.variant)})
+        (local / "manifest.json").write_text(json.dumps(manifest, indent=1))
+        weights = local
     shutil.copytree(ROOT / "filseg", work / "filseg", ignore=shutil.ignore_patterns("__pycache__"))
     (work / "notebooks").mkdir(parents=True)
     shutil.copy(ROOT / "notebooks" / "pipeline.ipynb", work / "notebooks" / "pipeline.ipynb")

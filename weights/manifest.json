@@ -87776,5 +87776,18 @@
    },
    "min_score": 0.24999999999999994
   }
+ },
+ "variants": {
+  "rule": {
+   "threshold": 0.25,
+   "close_radius": 0,
+   "fill_holes": true,
+   "min_area": 0,
+   "min_mean_prob": 0.85,
+   "min_max_prob": 0.99,
+   "merge_distance": 0,
+   "dilate_radius": 0,
+   "mask_threshold": 0.5
+  }
  }
 }

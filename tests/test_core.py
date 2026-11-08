@@ -508,3 +508,26 @@ def test_predict_batch_recomputes_non_finite_passes_in_fp32():
     with torch.autocast(device_type="cpu", dtype=torch.bfloat16, enabled=True):
         p = predict_batch(OverflowUnderAutocast(), x, tta=2)
     assert torch.isfinite(p).all() and torch.allclose(p, torch.full_like(p, 0.5))
+
+
+def test_make_submission_variants_share_the_maps(tmp_path):
+    import cv2
+    import torch
+
+    from filseg.infer import make_submission
+
+    test_dir = tmp_path / "test" / "test_images"
+    test_dir.mkdir(parents=True)
+    for k in range(2):
+        cv2.imwrite(str(test_dir / f"2015010{k}000000Bh.jpeg"), np.full((2048, 2048), 120, np.uint8))
+
+    class Square(torch.nn.Module):  # logits: one confident 16 x 16 block (-> 512 x 512 px at 2048)
+        def forward(self, x):
+            out = torch.full_like(x, -10.0)
+            out[..., 8:24, 8:24] = 10.0
+            return out
+
+    variants, frames = {"strict": PostConfig(threshold=0.5, min_area=10**7)}, {}
+    df = make_submission([(Square(), 64, "global")], tmp_path, PostConfig(threshold=0.5, min_area=0),
+                         torch.device("cpu"), tta=1, variants=variants, variant_frames=frames)
+    assert len(df) == 2 and set(frames) == {"strict"} and len(frames["strict"]) == 0

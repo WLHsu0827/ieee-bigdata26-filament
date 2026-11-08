@@ -6,8 +6,8 @@ predicted filaments, and (optionally, if the training annotations are present)
 reproduces the hold-out evaluation: Panoptic Quality, IoU / Dice distributions
 and one-to-many / many-to-one statistics.
 
-The committed `notebooks/pipeline.ipynb` additionally contains the outputs of the reproducibility
-run (`scripts/run_notebook.py` on a Kaggle T4); running this builder resets it to an unexecuted copy.
+The committed ``notebooks/pipeline.ipynb`` additionally contains the outputs of the reproducibility
+run (``scripts/run_notebook.py`` on a Kaggle T4); running this builder resets it to an unexecuted copy.
 
 Usage:
     python notebooks/build_pipeline_notebook.py
@@ -38,13 +38,9 @@ image, and writes `submission.csv` in the competition format.
 | 4. instance extraction | probability map | candidate components -> learned filter -> outlines at p > 0.5 | `filseg.postprocess.instances_from_prob` |
 | 5. encoding | instances | COCO RLE rows of `submission.csv` | `filseg.submission` |
 """),
-    ("markdown", "## 1. Setup
-
-Set `DATA_DIR` to the unzipped competition data (`MAGFiLO_1.0_Kaggle_2026`; found "
+    ("markdown", "## 1. Setup\n\nSet `DATA_DIR` to the unzipped competition data (`MAGFiLO_1.0_Kaggle_2026`; found "
                  "automatically next to the repository or under `/kaggle/input`). Install the pinned packages with "
-                 "`pip install -r requirements.txt` if needed.
-
-"
+                 "`pip install -r requirements.txt` if needed.\n\n"
                  "`PROFILE = \"full\"` reproduces the submission with all ten networks; `\"fast\"` uses the five "
                  "EfficientNetV2-S networks with their own post-processing (about half the inference time, "
                  "slightly lower out-of-fold PQ; see the table in section 2)."),
@@ -102,14 +98,19 @@ pd.DataFrame(entries)[["file", "encoder", "res", "norm", "fold"]]"""),
 if post.get("scorer"):
     summary["scorer"] = f"{len(post['scorer']['trees'])} trees on {post['scorer']['features']}"
 summary"""),
-    ("markdown", "## 3. Inference on the test images -> `submission.csv`"),
+    ("markdown", "## 3. Inference on the test images -> `submission.csv`\n\n"
+                 "The `full` profile also writes `submission_rule.csv`: the same probability maps with the "
+                 "three-parameter rule chosen by nested cross-validation (mean probability >= 0.85, peak >= 0.99) "
+                 "instead of the learned filter."),
     ("code", """test_files = sorted((DATA_DIR / "test" / "test_images").glob("*.jp*g"))
 if LIMIT:
     test_files = test_files[:LIMIT]
-timing = {}
+variants = {k: PostConfig(**v) for k, v in manifest.get("variants", {}).items()} if PROFILE == "full" else {}
+timing, variant_frames = {}, {}
 t0 = time.time()
 df = infer.make_submission(models, DATA_DIR, cfg, device, tta=manifest.get("tta", 4), timing=timing, limit=LIMIT,
-                           save_probs=Path(SAVE_PROBS) if SAVE_PROBS else None)
+                           save_probs=Path(SAVE_PROBS) if SAVE_PROBS else None,
+                           variants=variants, variant_frames=variant_frames)
 elapsed = time.time() - t0
 df, report = submission.write(list(df.itertuples(index=False, name=None)), OUT_CSV, {f.stem for f in test_files})
 print(f"{len(test_files)} images, {len(df)} filaments -> {OUT_CSV}")
@@ -117,6 +118,10 @@ print(f"end-to-end {elapsed / len(test_files):.2f} s per image on {device}: netw
       f"{timing['network_s_per_image']:.2f} s + post-processing {timing['post_s_per_image']:.2f} s "
       f"({len(models)} models, TTA x{manifest.get('tta', 4)})")
 print(report)
+for name, vdf in variant_frames.items():
+    vcsv = OUT_CSV.with_name(f"submission_{name}.csv")
+    vdf, vreport = submission.write(list(vdf.itertuples(index=False, name=None)), vcsv, {f.stem for f in test_files})
+    print(f"variant {name!r}: {len(vdf)} filaments -> {vcsv}; {vreport}")
 df.head()"""),
     ("markdown", "## 4. Visual check of the predicted filaments"),
     ("code", """from filseg import rle
@@ -192,8 +197,7 @@ def main() -> None:
             cell.update(execution_count=None, outputs=[])
         nb["cells"].append(cell)
     out = ROOT / "notebooks" / "pipeline.ipynb"
-    out.write_text(json.dumps(nb, indent=1), encoding="utf-8", newline="
-")
+    out.write_text(json.dumps(nb, indent=1), encoding="utf-8", newline="\n")
     print("wrote", out)
 
 

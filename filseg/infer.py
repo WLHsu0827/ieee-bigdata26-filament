@@ -50,13 +50,17 @@ def predict_full(models: list[tuple[torch.nn.Module, int, str]], images: list[np
 
 def make_submission(models, data_dir: Path, cfg: PostConfig, device: torch.device,
                     tta: int = 4, batch: int = 4, chunk: int = 8, save_probs: Path | None = None,
-                    timing: dict | None = None, limit: int = 0) -> pd.DataFrame:
+                    timing: dict | None = None, limit: int = 0,
+                    variants: dict[str, PostConfig] | None = None,
+                    variant_frames: dict[str, pd.DataFrame] | None = None) -> pd.DataFrame:
     """Predict all test images and return the submission frame.
 
     ``save_probs``: also store the ensemble probability maps (uint8, x255, 2048 px) as an
     ``.npz`` file so other post-processing rules can be applied without re-running the networks
     (``scripts/ensemble_submit.py``). ``timing``: filled with seconds per image (network,
     post-processing). ``limit`` > 0 predicts only the first ``limit`` test images (quick checks).
+    ``variants``: further post-processing configurations applied to the same (in-memory) maps; their
+    submission frames are stored in ``variant_frames`` under the same names.
     """
     import time
 
@@ -64,6 +68,7 @@ def make_submission(models, data_dir: Path, cfg: PostConfig, device: torch.devic
     if limit:
         files = files[:limit]
     rows, maps = [], {}
+    extra = {name: [] for name in (variants or {})}
     t_net = t_post = 0.0
     for s in range(0, len(files), chunk):
         part = files[s:s + chunk]
@@ -75,13 +80,20 @@ def make_submission(models, data_dir: Path, cfg: PostConfig, device: torch.devic
                 maps[f.stem] = np.round(np.clip(np.nan_to_num(p, nan=0.0), 0, 1) * 255).astype(np.uint8)
             lab, _ = instances_from_prob(p, cfg)
             rows += submission.rows_from_label(f.stem, lab)
-        t_net, t_post = t_net + t1 - t0, t_post + time.time() - t1
+        t2 = time.time()
+        for name, vcfg in (variants or {}).items():
+            for f, p in zip(part, probs):
+                extra[name] += submission.rows_from_label(f.stem, instances_from_prob(p, vcfg)[0])
+        t_net, t_post = t_net + t1 - t0, t_post + t2 - t1
     if save_probs is not None:
         np.savez_compressed(save_probs, **maps)
     if timing is not None:
         n = max(len(files), 1)
         timing.update(device=str(device), images=len(files), models=len(models), tta=tta,
                       network_s_per_image=t_net / n, post_s_per_image=t_post / n)
+    if variant_frames is not None:
+        for name, r in extra.items():
+            variant_frames[name] = pd.DataFrame(r, columns=submission.COLUMNS)
     return pd.DataFrame(rows, columns=submission.COLUMNS)
 
 
