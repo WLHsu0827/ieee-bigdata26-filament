@@ -78,7 +78,10 @@ and cosine decay, mixed precision and an exponential moving average of the weigh
 warm-up). Five folds grouped by image, 1.3--1.5\,h per fold on one T4 GPU.
 
 \textbf{Inference.} Each network predicts the full image with flip test-time augmentation
-($\times4$); the ten fold networks are averaged.
+($\times4$); the ten fold networks are averaged. Both encoders share the same five folds, so the
+out-of-fold map of a training image, used for all selection and evaluation below, averages only the
+two networks that did not see it (one for the \emph{fast} profile): the out-of-fold numbers describe a
+smaller ensemble than the submission, and the selection is transferred to the ten-network average.
 
 \textbf{Instances and an exact decomposition of PQ.} Instances are the 8-connected components of the
 thresholded map after hole filling. Because predicted instances are disjoint, a component $c$ matches

@@ -59,10 +59,13 @@ jupyter nbconvert --to notebook --execute notebooks/pipeline.ipynb   # or open a
 Two profiles (variable `PROFILE` in the notebook, or `FILSEG_PROFILE`), measured
 end to end on one T4 GPU for the 180 test images (`scripts/run_notebook.py`):
 
-| profile | networks | out-of-fold PQ (nested CV) | time per image |
+| profile | networks | out-of-fold PQ (nested CV)* | time per image |
 |---|---|---|---|
 | `full` (submission) | 5 x ResNet34 + 5 x EfficientNetV2-S U-Nets | 0.447 | 8.0-8.5 s |
 | `fast` | 5 x EfficientNetV2-S U-Nets | 0.444 | 5.2-5.3 s |
+
+\* Both encoders use the same five folds, so a training image's out-of-fold map averages only the
+networks that did not see it (two for `full`, one for `fast`); the submission averages all of them.
 
 ## Training from scratch
 
