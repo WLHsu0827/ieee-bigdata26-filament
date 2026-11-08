@@ -132,6 +132,11 @@ def build(args) -> None:
         for k in keys:
             gt_per_image[k] = sum(len(c) for _, c in by_image.get(k, []))
             fold_of_image[k] = fold
+        if args.subfolds:  # nested CV inside one fold (pilots trained on a single fold)
+            from filseg.data import image_folds
+
+            sub = image_folds(keys, args.subfolds, 2026)
+            fold_of_image.update({k: fold * 100 + sub[k] for k in keys})
         jobs = ((k, [z[k] for z in zs], cfg, LEVELS, by_image.get(k, [])) for k in keys)
         if args.workers > 1:
             method = "forkserver" if "forkserver" in mp.get_all_start_methods() else "spawn"
@@ -141,7 +146,7 @@ def build(args) -> None:
             results = [_job(j) for j in jobs]
         for feats in results:
             for f in feats:
-                f["fold"] = fold
+                f["fold"] = fold_of_image[f["image_id"]]
             rows.extend(feats)
         print(f"fold {fold}: {len(keys)} images ({[f.parent.parent.name for f in files]}), "
               f"{len(rows)} candidates so far, {time.time() - t0:.0f} s", flush=True)
@@ -275,21 +280,38 @@ def nested(lv: Levels, feats: list[str], per_level: bool, r: float, inner_splits
             "fp": int(fp), "fn": int(fn), "folds": chosen}
 
 
+def nested_rule(lv: Levels, r: float) -> dict:
+    """Nested CV of the three-parameter rule (area, peak, mean probability) at outline 0.5."""
+    from filseg.components import ComponentSet, nested_select
+
+    t = lv.t.copy()
+    gone = t["a@0.50"].to_numpy() == 0
+    t["v"], t["n_matched"] = t["v@0.50"], t["nm@0.50"]
+    t["n_entries"] = np.where(gone, 0, t["n_entries"])
+    cs = ComponentSet(t, sum(lv.gt.values()), PostConfig(**{k: v for k, v in lv.post.items() if k != "scorer"}),
+                      dict(lv.gt))
+    out = nested_select({"shape": cs}, lv.fold_of_image, r=r)
+    c = out["nested_counts"]
+    return {"nested_pq": out["nested_pq"], "objective": out["nested_objective"], "tp": c["tp"], "fp": c["fp"],
+            "fn": c["fn"], "folds": [{"fold": f["fold"], "rule": f["rule"]} for f in out["fold_choices"]]}
+
+
 def analyse(args) -> None:
     with open(args.table, "rb") as fh:
         data = pickle.load(fh)
     lv = Levels(data)
+    lv.post = data["post"]
     print(f"{len(lv.t)} candidates on {len(lv.gt)} images, levels {lv.levels}", flush=True)
     res = {"oracle_outline_0.5": lv.oracle(False), "oracle_best_outline": lv.oracle(True)}
     print(json.dumps(res), flush=True)
-    variants = {"base": (FEATURES, False), "extra": (FEATURES + EXTRA, False),
+    variants = {"rule": (None, False), "base": (FEATURES, False), "extra": (FEATURES + EXTRA, False),
                 "levels": (FEATURES, True), "levels_extra": (FEATURES + EXTRA, True)}
     for r in args.r:
         for name, (feats, per_level) in variants.items():
             if args.only and name not in args.only:
                 continue
             t0 = time.time()
-            out = nested(lv, feats, per_level, r, args.inner_splits)
+            out = nested_rule(lv, r) if name == "rule" else nested(lv, feats, per_level, r, args.inner_splits)
             res[f"{name}@r{r}"] = out
             print(f"{name:13s} r={r}: nested PQ {out['nested_pq']:.4f} (TP {out['tp']}, FP {out['fp']}, "
                   f"FN {out['fn']}) {time.time() - t0:.0f} s; folds {out['folds']}", flush=True)
@@ -307,6 +329,8 @@ def main() -> None:
     b.add_argument("--data", default=None)
     b.add_argument("--workers", type=int, default=4)
     b.add_argument("--limit", type=int, default=0, help="first n images per fold only (tests)")
+    b.add_argument("--subfolds", type=int, default=0,
+                   help="split every fold into this many sub-folds for nested CV (single-fold pilots)")
     b.add_argument("--out", required=True)
     a = sub.add_parser("analyse")
     a.add_argument("table")
