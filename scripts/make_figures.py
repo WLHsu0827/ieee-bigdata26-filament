@@ -149,51 +149,15 @@ def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
     by_size = analysis.by_size(analysis.gt_table(gt, odf))
     tax = analysis.error_taxonomy(gt, preds, odf)
 
-    fig, ax = plt.subplots(1, 5, figsize=(27, 4.5))
-    for a, vals, name in ((ax[0], iou, "IoU"), (ax[1], dice, "Dice")):
-        a.hist(vals, bins=np.linspace(0, 1, 51), weights=np.ones(len(vals)) / max(len(vals), 1),
-               color="navy", alpha=0.7, edgecolor="black")
-        a.axvline(vals.mean(), color="crimson", ls="--", label=f"mean {vals.mean():.3f}")
-        if name == "IoU":
-            a.axvline(0.5, color="gray", ls=":", label="match threshold 0.5")
-        a.set_xlabel(name)
-        a.set_ylabel("fraction of overlapping pairs")
-        a.set_title(f"{name} of overlapping GT / prediction pairs")
-        a.legend(fontsize=8)
-    ks = sorted(set(gdeg) | set(pdeg))
-    ax[2].bar([k + 0.5 for k in ks], [gdeg.get(k, 0) for k in ks], width=0.8,
-              color=["crimson" if k == 0 else "forestgreen" for k in ks], edgecolor="black", alpha=0.7)
-    ax[2].bar([-(k + 0.5) for k in ks], [pdeg.get(k, 0) for k in ks], width=0.8,
-              color=["darkorange" if k == 0 else "steelblue" for k in ks], edgecolor="black", alpha=0.7)
-    ax[2].axvline(0, color="black", lw=0.8)
-    ticks = [k + 0.5 for k in ks] + [-(k + 0.5) for k in ks]
-    ax[2].set_xticks(ticks, [f"1:{k}" for k in ks] + [f"{k}:1" for k in ks], rotation=45, fontsize=8)
-    ax[2].set_title("matching degrees (IoU > 0): GT 1:n right, prediction n:1 left")
-    ax[2].set_ylabel("count")
-    labels = [str(s).replace(".0", "") for s in by_size["size"]]
-    ax[3].bar(range(len(labels)), by_size["match_rate"], color="navy", alpha=0.7, edgecolor="black")
-    ax[3].set_xticks(range(len(labels)), labels, rotation=45, fontsize=8)
-    ax[3].set_xlabel("GT filament area (px at 2048)")
-    ax[3].set_ylabel("fraction matched (IoU > 0.5)")
-    ax[3].set_title("recall by filament size")
-    causes = [("missed", "no overlapping prediction"), ("partial", "covered < 50 %"),
-              ("merged", "merged with a neighbour"), ("too_large", "prediction too large"),
-              ("fragmented", "fragmented (union would match)")]
-    vals = [tax["gt"][k] for k, _ in causes] + [tax["pred"]["spurious"], tax["pred"]["overlapping"]]
-    names = [f"FN: {d}" for _, d in causes] + ["FP: no overlap with any GT", "FP: overlaps a GT (IoU <= 0.5)"]
-    colors = ["crimson"] * len(causes) + ["darkorange"] * 2
-    ax[4].barh(range(len(vals))[::-1], vals, color=colors, alpha=0.7, edgecolor="black")
-    ax[4].set_yticks(range(len(vals))[::-1], names, fontsize=8)
-    ax[4].set_xlabel("count (per annotator set)")
-    ub = tax["upper_bounds"]
-    ax[4].set_title(f"error causes (PQ upper bounds: fragments grouped {ub['group_fragments']:.3f},\n"
-                    f"isolated false positives removed {ub['remove_spurious']:.3f})", fontsize=9)
-    fig.suptitle(f"out-of-fold: {len(probs)} images, {len(gt)} annotator sets -- PQ {res.pq:.4f} "
-                 f"(SQ {res.sq:.3f}, RQ {res.rq:.3f}; TP {res.tp}, FP {res.fp}, FN {res.fn})")
+    recall = [(str(s).replace(".0", ""), float(r)) for s, r in zip(by_size["size"], by_size["match_rate"])]
+    header = (f"out-of-fold: {len(probs)} images, {len(gt)} annotator sets -- PQ {res.pq:.4f} "
+              f"(SQ {res.sq:.3f}, RQ {res.rq:.3f}; TP {res.tp}, FP {res.fp}, FN {res.fn})")
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(path, dpi=110)
-    plt.close(fig)
+    np.savez_compressed(path.with_suffix(".npz"), iou=iou, dice=dice)  # for re-plotting without recomputation
+    draw_evaluation(iou, dice, gdeg, pdeg, recall, tax, header, path, layout="row")
+    stats = dict(images=len(probs), entries=len(gt), pq=res.pq, sq=res.sq, rq=res.rq, tp=res.tp, fp=res.fp, fn=res.fn)
+    draw_evaluation(iou, dice, gdeg, pdeg, recall, tax, header, path.with_name(path.stem + "_grid.png"), layout="grid",
+                    stats=stats)
     post = json.loads(Path(post_json).read_text())
     if post.get("scorer"):  # summarise the learned filter (the full trees live in the post-processing JSON)
         post["scorer"] = {"trees": len(post["scorer"]["trees"]), "features": post["scorer"]["features"]}
@@ -256,6 +220,79 @@ def morphology(probs_npz: Path, post_json: Path, data_dir: Path, image_ids: list
     plt.close(fig)
     return path
 
+
+def draw_evaluation(iou, dice, gdeg: dict, pdeg: dict, recall: list, tax: dict, header: str, path: Path,
+                    layout: str = "row", stats: dict | None = None) -> Path:
+    """Rubric figure: IoU / Dice of overlapping pairs, one-to-many / many-to-one degrees, recall by size
+    and error causes. ``layout``: ``row`` (1 x 5, notebook) or ``grid`` (2 x 3 with a summary panel, report)."""
+    import numpy as np
+
+    grid = layout == "grid"
+    fs = 10 if grid else 8
+    if grid:
+        fig, axs = plt.subplots(2, 3, figsize=(14, 8.4))
+        ax = [axs[0, 0], axs[0, 1], axs[0, 2], axs[1, 0], axs[1, 1]]
+    else:
+        fig, ax = plt.subplots(1, 5, figsize=(27, 4.5))
+    for a, vals, name in ((ax[0], iou, "IoU"), (ax[1], dice, "Dice")):
+        a.hist(vals, bins=np.linspace(0, 1, 51), weights=np.ones(len(vals)) / max(len(vals), 1),
+               color="navy", alpha=0.7, edgecolor="black")
+        a.axvline(vals.mean(), color="crimson", ls="--", label=f"mean {vals.mean():.3f}")
+        if name == "IoU":
+            a.axvline(0.5, color="gray", ls=":", label="match threshold 0.5")
+        a.set_xlabel(name, fontsize=fs)
+        a.set_ylabel("fraction of overlapping pairs", fontsize=fs)
+        a.set_title(f"{name} of overlapping GT / prediction pairs", fontsize=fs + 1)
+        a.legend(fontsize=fs - 1)
+    ks = sorted({int(k) for k in gdeg} | {int(k) for k in pdeg})
+    g = {int(k): v for k, v in gdeg.items()}
+    p = {int(k): v for k, v in pdeg.items()}
+    ax[2].bar([k + 0.5 for k in ks], [g.get(k, 0) for k in ks], width=0.8,
+              color=["crimson" if k == 0 else "forestgreen" for k in ks], edgecolor="black", alpha=0.7)
+    ax[2].bar([-(k + 0.5) for k in ks], [p.get(k, 0) for k in ks], width=0.8,
+              color=["darkorange" if k == 0 else "steelblue" for k in ks], edgecolor="black", alpha=0.7)
+    ax[2].axvline(0, color="black", lw=0.8)
+    ax[2].set_xticks([k + 0.5 for k in ks] + [-(k + 0.5) for k in ks],
+                     [f"1:{k}" for k in ks] + [f"{k}:1" for k in ks], rotation=45, fontsize=fs - 1)
+    ax[2].set_title("matching degrees (IoU > 0)\nGT 1:n (right), prediction n:1 (left)" if grid else
+                    "matching degrees (IoU > 0): GT 1:n right, prediction n:1 left", fontsize=fs + 1)
+    ax[2].set_ylabel("count", fontsize=fs)
+    ax[3].bar(range(len(recall)), [r for _, r in recall], color="navy", alpha=0.7, edgecolor="black")
+    ax[3].set_xticks(range(len(recall)), [lbl for lbl, _ in recall], rotation=45, fontsize=fs - 1)
+    ax[3].set_xlabel("GT filament area (px at 2048)", fontsize=fs)
+    ax[3].set_ylabel("fraction matched (IoU > 0.5)", fontsize=fs)
+    ax[3].set_title("recall by filament size", fontsize=fs + 1)
+    causes = [("missed", "no overlapping prediction"), ("partial", "covered < 50 %"),
+              ("merged", "merged with a neighbour"), ("too_large", "prediction too large"),
+              ("fragmented", "fragmented (union would match)")]
+    vals = [tax["gt"][k] for k, _ in causes] + [tax["pred"]["spurious"], tax["pred"]["overlapping"]]
+    names = [f"FN: {d}" for _, d in causes] + ["FP: no overlap with any GT", "FP: overlaps a GT (IoU <= 0.5)"]
+    ax[4].barh(range(len(vals))[::-1], vals, color=["crimson"] * len(causes) + ["darkorange"] * 2, alpha=0.7,
+               edgecolor="black")
+    ax[4].set_yticks(range(len(vals))[::-1], names, fontsize=fs - 1)
+    ax[4].set_xlabel("count (per annotator set)", fontsize=fs)
+    ub = tax["upper_bounds"]
+    ax[4].set_title("error causes" if grid else
+                    f"error causes (PQ upper bounds: fragments grouped {ub['group_fragments']:.3f},\n"
+                    f"isolated false positives removed {ub['remove_spurious']:.3f})", fontsize=fs + 1)
+    if grid:
+        s = axs[1, 2]
+        s.axis("off")
+        st = stats or {}
+        lines = [f"out-of-fold: {st.get('images', '?')} images,", f"{st.get('entries', '?')} annotator sets", "",
+                 f"PQ {st.get('pq', float('nan')):.3f}", f"SQ {st.get('sq', float('nan')):.3f}  RQ {st.get('rq', float('nan')):.3f}",
+                 f"TP {st.get('tp', 0):,}  FP {st.get('fp', 0):,}", f"FN {st.get('fn', 0):,}", "",
+                 "mean IoU / Dice of", f"overlapping pairs: {iou.mean():.3f} / {dice.mean():.3f}", "",
+                 "PQ upper bounds:", f"fragments grouped {ub['group_fragments']:.3f}",
+                 f"isolated FP removed {ub['remove_spurious']:.3f}"]
+        s.text(0.02, 0.98, "\n".join(lines), va="top", ha="left", fontsize=fs + 1, transform=s.transAxes)
+    else:
+        fig.suptitle(header)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(path, dpi=110 if not grid else 150)
+    plt.close(fig)
+    return path
 
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "pipeline"
