@@ -160,6 +160,12 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   the verification kernels had internet enabled, so this was not covered before), and the three post-processing
   configurations each keep 3 of 4 synthetic ridges; 25 s on two CPU cores. The notebook's code cells make no
   network calls.
+* Public-split noise (11-08, `scripts/split_noise.py` on the K1 out-of-fold maps, Kaggle CPU kernel fil-noise;
+  `docs/split_noise.json`): per-image PQ counts of the final configurations, pooled PQ over 4,000 random
+  90-image subsets of the 707 images. A score on 90 images scatters around the score on all images with
+  SD 0.012 (5-95 %: 0.423-0.463 for rule A, whose 707-image PQ is 0.444), so the public leaderboard (about
+  90 test images) cannot resolve differences of a few thousandths; the paired difference of two configurations
+  on the same subsets has SD 0.004. Decisions therefore rest on nested CV over all 707 images.
 * Half-precision overflow (11-08): the EfficientNetV2-S networks occasionally produce non-finite logits under
   fp16 autocast (numpy "invalid value encountered in cast" when saving maps; K1 fold 0 and the first notebook
   run). `predict_batch` now recomputes such a TTA pass in fp32. Second reproducibility run (fil-nb-verify v2):

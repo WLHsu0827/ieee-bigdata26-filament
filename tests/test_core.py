@@ -530,6 +530,31 @@ def test_predict_batch_recomputes_non_finite_passes_in_fp32():
     assert torch.isfinite(p).all() and torch.allclose(p, torch.full_like(p, 0.5))
 
 
+def test_predict_oof_tta8_equals_dihedral_tta():
+    import sys
+    from pathlib import Path
+
+    import torch
+
+    from filseg.model import build_model, predict_images
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from predict_oof import predict_tta4_tta8
+
+    torch.manual_seed(0)
+    model = build_model("Unet", "resnet18", weights=None).eval()
+    rng = np.random.default_rng(0)
+    images = [rng.integers(0, 256, (64, 64), dtype=np.uint8) for _ in range(3)]
+    dev = torch.device("cpu")
+    m4, m8 = predict_tta4_tta8(model, images, 64, "global", dev, batch=2)
+    ref4 = predict_images([model], images, 64, dev, tta=4, batch=2, norm="global")
+    ref8 = predict_images([model], images, 64, dev, tta=8, batch=2, norm="global")
+    for a, b, r4, r8 in zip(m4, m8, ref4, ref8, strict=True):
+        assert np.allclose(a, r4.astype(np.float32), atol=1e-6)
+        assert np.allclose(b, r8.astype(np.float32), atol=2e-3)  # float16 storage of the reference
+        assert not np.allclose(b, a, atol=1e-4)  # the rotated passes do contribute
+
+
 def test_make_submission_variants_share_the_maps(tmp_path):
     import cv2
     import torch

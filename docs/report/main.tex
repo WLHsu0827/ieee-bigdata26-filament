@@ -191,7 +191,9 @@ consistent with sparser test labels. Stricter selections never transferred worse
 the grid-tuned rule of the 1024\,px model (0.35 vs.\ 0.34), and for the ensemble the robust objective beat
 plain PQ (0.39 vs.\ 0.38). The learned filter's cross-validated gain did not show on the public part
 (0.38; 93\,\% of its instances are shared with the rule's submission, so the difference rests on a few
-dozen filaments of about 90 images). We used the leaderboard only to confirm transfer, never to tune.
+dozen filaments of about 90 images; a score on 90 images scatters with SD 0.012 around the score on all
+images, estimated from random subsets of our out-of-fold images). We used the leaderboard only to confirm
+transfer, never to tune.
 
 \textbf{Efficiency and reproducibility.} Executing the pipeline notebook on one T4 GPU for the 180
 test images takes 7.3--8.0\,s (ten networks, flip TTA $\times4$) plus about 0.5\,s (post-processing) per image in three

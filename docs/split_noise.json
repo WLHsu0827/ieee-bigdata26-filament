@@ -1,0 +1,27 @@
+{
+ "description": "Sampling noise of a score on a 90-image subset (the public split has about 90 test images): scripts/split_noise.py on the K1 out-of-fold maps (707 images, two networks per image); post_final_rule = final submission A, post_final_full = final submission B (its learned filter was fitted on these maps, so its level is in-sample).",
+ "images": 707,
+ "subset": 90,
+ "draws": 4000,
+ "configs": {
+  "post_final_rule": {
+   "pq_all": 0.4437220117026698,
+   "subset_sd": 0.012329571224760423,
+   "subset_p05": 0.4226407749238963,
+   "subset_p95": 0.4633282217564742
+  },
+  "post_final_full": {
+   "pq_all": 0.46210264779812443,
+   "subset_sd": 0.012316728244524214,
+   "subset_p05": 0.4412941480120128,
+   "subset_p95": 0.4821517369083898
+  }
+ },
+ "paired": {
+  "post_final_full - post_final_rule": {
+   "mean": 0.018442585216899104,
+   "sd": 0.0038385715682828026,
+   "p_negative": 0.0
+  }
+ }
+}
