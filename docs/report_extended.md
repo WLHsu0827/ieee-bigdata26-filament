@@ -181,11 +181,32 @@ folds of a nested cross-validation of the post-processing on all 707 out-of-fold
   vs public 0.34 / 0.30, a worse fit). We do not tune on the public LB; the
   sparse-label view motivates the robust selection objective above. The public
   part has about 90 images: the rule and learned-filter submissions share 93 % of
-  their instances, so their 0.01 difference rests on a few dozen filaments.
+  their instances, so their 0.01 difference rests on a few dozen filaments. Drawing
+  random 90-image subsets of the 707 out-of-fold images, a pooled PQ scatters with
+  SD 0.012 around the score on all images (`scripts/split_noise.py`), so the public
+  part cannot resolve differences of a few thousandths.
 * Efficiency (end to end, measured by executing the pipeline notebook on one T4 GPU for the
   180 test images): ten networks 7.3-8.0 s (flip TTA x4) + about 0.5 s (post-processing) per
   image, 8.0-8.5 s in total (three runs); five EfficientNetV2-S networks 4.7-4.8 s + 0.5 s
-  (two runs); a single network 1.1-1.5 s + 0.5 s.
+  (two runs); a single network 1.1-1.5 s + 0.5 s. Dihedral TTA x8 (flips and 90 degree
+  rotations) instead of x4, re-predicted for all 707 out-of-fold images from the stored
+  weights, raises the nested PQ by 0.001-0.003 (rule +0.003, learned filter +0.001 to +0.002)
+  for twice the network time; the submission keeps x4.
+* Further negative results (details and numbers in `docs/experiments.md`):
+  * A larger encoder, EfficientNetV2-M (1.75x the training time of EfficientNetV2-S, 1.66 s
+    instead of 1.31 s per image and network), looked promising on fold 0 (ensemble +0.005 to
+    +0.011, nested within the fold), but on folds 0-2 (424 images) it did not improve the
+    ensemble, neither added (-0.003 to +0.000) nor replacing ResNet34 (-0.004 to +0.001).
+    A decision gate on a single fold of 142 images is too noisy.
+  * Extra weight on small filaments and a 6 px band around every filament
+    (`--small-weight 0.5`) did not improve the pair on fold 0 (-0.006 to +0.003).
+  * Choosing each candidate's outline level (0.30-0.70) with a second regressor: no gain
+    (nested 0.4478 / 0.4460 vs 0.4473 / 0.4472), although an oracle that knows each
+    candidate's best outline would reach 0.538 vs 0.518.
+  * Giving the learned filter each network's probabilities separately: +0.002 nested, but these
+    features come from single networks out of fold and from averages of five in the submission,
+    and on the test images the filter's decisions shift more between the two conditions than
+    with the current features (`extent_levels.py test-shift`), so it was not adopted.
 
 ## 5. Conclusion
 

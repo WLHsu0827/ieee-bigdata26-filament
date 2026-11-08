@@ -198,13 +198,21 @@ transfer, never to tune.
 \textbf{Efficiency and reproducibility.} Executing the pipeline notebook on one T4 GPU for the 180
 test images takes 7.3--8.0\,s (ten networks, flip TTA $\times4$) plus about 0.5\,s (post-processing) per image in three
 runs; the \emph{fast} profile (five networks) takes 4.7--4.8\,+\,0.5\,s. The notebook reproduces the submission
-from the stored fp16 weights (agreement PQ 0.998 with the training-time predictions).
+from the stored fp16 weights (agreement PQ 0.998 with the training-time predictions). Adding the four
+90\textdegree{} rotations to the test-time augmentation ($\times8$) raises the nested out-of-fold PQ by only
+0.001--0.003 for twice the network time, so the submission keeps $\times4$.
 
 \textbf{Negative results.} (i) Noisy-student training \cite{xie2020noisystudent} with 1,200 unlabelled
 GONG archive images taken at least two days away from every competition image (listed with hashes in
 the repository), pseudo-labelled by the fold's own networks, did not help at equal compute (students
 0.443 / 0.438 vs.\ teachers 0.445 / 0.442 on fold 0). (ii) Distance-based merging of nearby
 components, lower detection thresholds and global outline levels other than 0.5 were within noise.
+(iii) A larger encoder (EfficientNetV2-M) improved the fold-0 ensemble by 0.005--0.011, but not the
+ensemble on folds 0--2 ($-0.004$ to $+0.001$); extra weight on small filaments and their borders did
+not help either. A single-fold gate on 142 images is too noisy to decide. (iv) Choosing each candidate's
+outline level with a second regressor captured none of the 0.020 that an oracle would gain, and giving
+the filter each network's probabilities separately (+0.002) shifts between out-of-fold and submission
+ensembles, so neither was adopted.
 
 \section{Conclusion}
 Native-resolution U-Nets trained on the annotators' soft consensus, connected components and a
