@@ -482,6 +482,64 @@ def test_ensemble_shift_agreement():
     assert agreement(la, np.zeros_like(la)) == (0, 0.0)
 
 
+def _synthetic_levels():
+    """Two images, four candidates, three outline levels: a hand-checkable candidate table."""
+    rows = []
+    for img, fold, cands in (("a", 0, [(1.4, 2, 1, 0.8), (0.0, 0, 1, 0.1)]),
+                             ("b", 1, [(0.6, 1, 2, 0.6), (0.55, 1, 0, 0.3)])):
+        for v5, nm5, gone, mean in cands:
+            r = {"image_id": img, "fold": fold, "n_entries": 2, "area": 100, "mean_prob": mean}
+            for lev, scale in ((0.4, 0.9), (0.5, 1.0), (0.6, 1.2)):
+                r[f"a@{lev:.2f}"] = 0 if (gone == 0 and lev == 0.6) else 50
+                r[f"v@{lev:.2f}"] = min(v5 * scale, 2.0) if nm5 else 0.0
+                r[f"nm@{lev:.2f}"] = nm5
+            rows.append(r)
+    return {"table": pd.DataFrame(rows), "gt_per_image": {"a": 3, "b": 2}, "fold_of_image": {"a": 0, "b": 1},
+            "levels": (0.4, 0.5, 0.6)}
+
+
+def test_extent_levels_counts_and_oracles():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from extent_levels import Levels, paired_bootstrap, per_image_counts
+
+    lv = Levels(_synthetic_levels())
+    keep = np.array([True, False, True, True])
+    lev = np.full(4, lv.i05)
+    s, tp, fp, fn = lv.counts(keep, lev, np.ones(4, bool), {"a", "b"})
+    # kept: a0 (v 1.4, 2 matches of 2 entries), b0 (0.6, 1 of 2), b1 (0.55, 1 of 2); GT 3 + 2
+    assert (s, tp, fp, fn) == pytest.approx((2.55, 4, 2, 1))
+    per = per_image_counts(lv, keep, lev)
+    assert per[["s", "tp", "fp", "fn"]].sum().to_numpy() == pytest.approx([2.55, 4, 2, 1])
+    # a candidate that vanishes at a level contributes nothing there, even if kept
+    lev_b1 = lev.copy()
+    lev_b1[3] = lv.levels.index(0.6)
+    assert lv.counts(keep, lev_b1, np.ones(4, bool), {"a", "b"})[2] == 1
+    assert lv.oracle(per_component=True) >= lv.oracle(per_component=False) > 0
+    boot = paired_bootstrap(per, per, draws=50)
+    assert boot["diff"] == 0 and boot["sd"] == 0
+
+
+def test_split_noise_subset_stats():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from split_noise import pooled_pq, subset_stats
+
+    rng = np.random.default_rng(1)
+    a = {f"i{k}": [float(rng.uniform(0, 4)), int(rng.integers(1, 6)), int(rng.integers(0, 3)), int(rng.integers(0, 4))]
+         for k in range(120)}
+    b = {k: [v[0] * 1.05, v[1], v[2], v[3]] for k, v in a.items()}  # same matches, 5 % higher IoU
+    s = subset_stats({"A": a, "B": b}, 60, 200)
+    assert s["configs"]["A"]["subset_sd"] > 0
+    assert s["configs"]["B"]["pq_all"] == pytest.approx(1.05 * s["configs"]["A"]["pq_all"])
+    assert s["paired"]["B - A"]["p_negative"] == 0.0
+    assert pooled_pq(np.array([[1.0, 2, 0, 0]])) == pytest.approx(0.5)
+
+
 def test_scorer_export_matches_sklearn_and_filters_components():
     from sklearn.ensemble import HistGradientBoostingRegressor
 

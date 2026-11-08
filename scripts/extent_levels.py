@@ -200,7 +200,8 @@ class Levels:
                          sum(self.gt.get(i, 0) for i in images) - tp], float)
 
     def oracle(self, per_component: bool) -> float:
-        lev = self.y.argmax(1) if per_component else np.full(len(self.y), self.i05)
+        best = np.where(self.a > 0, self.y, -np.inf).argmax(1)  # levels where the candidate vanished are not options
+        lev = best if per_component else np.full(len(self.y), self.i05)
         val = self.y[np.arange(len(lev)), lev]
         pq, images = 0.4, set(self.gt)
         for _ in range(50):  # Dinkelbach: keep iff value > PQ / 2
