@@ -63,6 +63,11 @@ Every pinned version in `requirements.txt` has binary wheels for Python 3.11, 3.
 PyPI for Linux x86_64, and for Windows with 3.12); Python 3.10 lacks `scipy==1.16.3` and Python 3.14 lacks
 wheels for `numpy==2.1.3` and three other pins.
 
+The committed notebook run, like all training runs, used one T4 GPU in the Kaggle image
+`gcr.io/kaggle-private-byod/python@sha256:de153e6d303881930c51286216393d56f56b26458d0661350305a1e8144eea01`;
+`kaggle/build_kernel.py` pins this image (and the CPU image of the analysis runs) in the metadata of the
+kernels it builds, so that a re-run on Kaggle uses the same environment.
+
 Apart from `pip install`, nothing is downloaded: the networks are built without pretrained
 weights and loaded from `weights/`. `python scripts/check_weights.py` checks this on a CPU
 without the competition data (about half a minute): it compares every weight file with the
