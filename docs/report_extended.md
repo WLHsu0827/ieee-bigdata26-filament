@@ -159,6 +159,17 @@ leaderboard 0.39) and with the learned filter (0.38).
 (Fold-0 and fold-mean numbers use one fixed rule; "nested" numbers are pooled over the outer
 folds of a nested cross-validation of the post-processing on all 707 out-of-fold images.)
 
+* Uncertainty (`scripts/nested_uncertainty.py`, `docs/nested_uncertainty.json`; 4,000 bootstrap resamples
+  of whole images): the nested PQ of the final rule (submission A) is 0.443 with a 95 % interval of
+  0.434-0.453, that of the learned filter (submission B) 0.447 with 0.438-0.457; over the five outer folds
+  they vary with an SD of 0.005 and 0.006 (per fold 0.437-0.450 and 0.438-0.454). Both use the same maps,
+  so their paired difference is much more precise than either interval: B - A = +0.0038 (SD 0.0013,
+  95 % interval 0.0012-0.0065, positive in 99.8 % of the resamples). Single networks with one fixed rule
+  vary over the five folds with an SD of 0.005 (ResNet34, mean 0.422) and 0.007 (EfficientNetV2-S, mean
+  0.432). For the in-sample error profile below, PQ 0.462 has the interval 0.453-0.471, and the match rate
+  is 0.26 (0.21-0.31) for filaments below 300 px and 0.63 (0.54-0.71) above 10,000 px
+  (`docs/evaluation_uncertainty.json`, 2,000 resamples).
+
 * Error profile of the final configuration (ensemble + learned filter; 707 out-of-fold images,
   8,199 GT filaments of 1,154 annotator sets; in-sample for the filter): PQ 0.462, 62 % matched,
   SQ 0.68, 1,707 false positives (531 without any overlap). Of the unmatched GT filaments 64 % have no

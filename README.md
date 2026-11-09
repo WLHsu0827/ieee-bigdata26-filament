@@ -118,7 +118,7 @@ python scripts/run_notebook.py --profile full --weights weights/manifest.json --
 | `filseg/postprocess.py`, `filseg/tune.py` | probability map -> instances; post-processing scoring |
 | `filseg/components.py` | per-component PQ decomposition, nested rule selection, nested CV of the learned filter |
 | `filseg/scorer.py` | learned component filter: gradient-boosted trees exported to JSON, numpy inference |
-| `filseg/analysis.py` | error analysis (by size, aggregation, matching degrees, error causes with PQ upper bounds) |
+| `filseg/analysis.py` | error analysis (by size with bootstrap intervals over images, aggregation, matching degrees, error causes with PQ upper bounds) |
 | `filseg/infer.py` | inference / ensembling from saved weights |
 | `filseg/classical.py` | traditional (non-learning) darkness-threshold baseline |
 | `scripts/` | command-line tools for reproduction, model building, the analyses behind the report and the experiments that were not adopted; index in [`scripts/README.md`](scripts/README.md) |
@@ -128,6 +128,7 @@ python scripts/run_notebook.py --profile full --weights weights/manifest.json --
 | `docs/` | experiment log, report, figures, evaluation numbers, paired comparisons of the pilot experiments (`gate/`, `gate3/`), list of the external images |
 | `kaggle/` | builders for self-contained Kaggle kernels and Colab notebooks |
 | `tests/` | unit tests (`python -m pytest tests`) |
+| `ruff.toml` | lint rules (`ruff check .`) |
 
 ## Data and licence
 

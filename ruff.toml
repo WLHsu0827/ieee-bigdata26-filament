@@ -1,0 +1,11 @@
+# Lint rules of this repository: `ruff check .` (pyflakes and pycodestyle's import, statement and
+# syntax-error checks, the classic ruff defaults). Pinned here so that the result does not depend on the
+# default rule set of the installed ruff version.
+target-version = "py311"
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
+
+[lint.per-file-ignores]
+# the executed notebook is kept exactly as it ran (one of its cells imports several modules on one line)
+"*.ipynb" = ["E401"]
