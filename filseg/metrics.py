@@ -36,10 +36,12 @@ class Crop:
 
     @property
     def area(self) -> int:
+        """Number of mask pixels."""
         return int(self.mask.sum())
 
     @staticmethod
     def from_full(mask: np.ndarray) -> "Crop":
+        """Crop a full-size boolean mask to its bounding box (an empty mask gives a 0 x 0 crop)."""
         ys = np.flatnonzero(mask.any(axis=1))
         xs = np.flatnonzero(mask.any(axis=0))
         if ys.size == 0:
@@ -49,6 +51,7 @@ class Crop:
 
     @staticmethod
     def from_rle(counts: str) -> "Crop":
+        """Decode a compressed COCO RLE counts string of a 2048 x 2048 mask into a crop."""
         return Crop.from_full(rle_util.decode(counts))
 
 
@@ -82,6 +85,8 @@ def overlap_matrices(gts: list[Crop], preds: list[Crop]) -> tuple[np.ndarray, np
 
 @dataclass
 class PQResult:
+    """Pooled Panoptic Quality and its counts: ``pq = sum_iou / (tp + fp / 2 + fn / 2)``."""
+
     pq: float
     tp: int
     fp: int
@@ -171,6 +176,8 @@ def frame_to_crops(df: pd.DataFrame) -> dict[str, list[Crop]]:
 
 
 def evaluate_frames(gt_df: pd.DataFrame, pred_df: pd.DataFrame) -> tuple[PQResult, pd.DataFrame]:
+    """:func:`evaluate` on two official-format frames (``filament_id``, ``segmentation_rle``): the GT
+    frame keyed by entry id, the prediction frame by image id (see :func:`frame_to_crops`)."""
     return evaluate(frame_to_crops(gt_df), frame_to_crops(pred_df))
 
 

@@ -103,6 +103,13 @@ def _job(args):
 
 @dataclass
 class ComponentSet:
+    """Candidate components of one *shape* configuration and their exact PQ contributions.
+
+    ``table`` has one row per candidate: its features (:data:`FEATURES`), ``v`` (matched IoU summed
+    over the image's annotator sets), ``n_entries`` and ``n_matched``. Any keep mask over the rows is
+    then scored exactly by :meth:`pq` (decomposition in the module docstring).
+    """
+
     table: pd.DataFrame      # one row per candidate component
     n_gt: int                # total number of GT filaments over all entries
     shape_cfg: PostConfig
@@ -127,6 +134,7 @@ class ComponentSet:
         return (s / den if den else 0.0), tp, fp, fn
 
     def rule(self, min_area: int = 0, min_max_prob: float = 0.0, min_mean_prob: float = 0.0) -> np.ndarray:
+        """Keep mask of the three-parameter rule: area, peak and mean probability at or above the thresholds."""
         t = self.table
         return ((t["area"] >= min_area) & (t["max_prob"] >= min_max_prob)
                 & (t["mean_prob"] >= min_mean_prob)).to_numpy()

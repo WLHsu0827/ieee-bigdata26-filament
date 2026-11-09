@@ -27,6 +27,9 @@ TRAIN_JSON = "MAGFiLO_1.0_Annotations_kaggle2026_train.json"
 
 @dataclass
 class Entry:
+    """One annotator's annotation set of one image (``entry_id = <annotator>-<image_id>``): the COCO
+    polygon and category id of every filament the annotator drew."""
+
     entry_id: str
     annotator: str
     image_id: str
@@ -63,6 +66,7 @@ def load_entries(json_path: str | Path) -> list[Entry]:
 
 
 def group_by_image(entries: list[Entry]) -> dict[str, list[Entry]]:
+    """``image_id -> entries`` (one to three annotators per image), sorted by image id."""
     out: dict[str, list[Entry]] = defaultdict(list)
     for e in entries:
         out[e.image_id].append(e)

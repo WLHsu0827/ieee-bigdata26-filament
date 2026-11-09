@@ -40,6 +40,8 @@ def pred_table(preds: dict[str, list[Crop]], overlap_df: pd.DataFrame) -> pd.Dat
 
 
 def by_size(table: pd.DataFrame, bins=AREA_BINS) -> pd.DataFrame:
+    """Count, match rate and mean best IoU per area bin (px at 2048) of a :func:`gt_table` or
+    :func:`pred_table`."""
     t = table.assign(size=pd.cut(table["area"], bins, right=False))
     g = t.groupby("size", observed=True)
     return pd.DataFrame({"n": g.size(), "match_rate": g["matched"].mean(),
@@ -54,6 +56,8 @@ def overlap_distributions(overlap_df: pd.DataFrame) -> tuple[np.ndarray, np.ndar
 
 
 def summary(gt: dict[str, list[Crop]], preds: dict[str, list[Crop]], overlap_df: pd.DataFrame) -> dict:
+    """Validation summary: GT and prediction tables by size, one-to-many / many-to-one matching
+    degrees and the mean IoU / Dice of overlapping pairs."""
     g, p = gt_table(gt, overlap_df), pred_table(preds, overlap_df)
     gdeg, pdeg = matching_degrees(overlap_df)
     iou, dice = overlap_distributions(overlap_df)

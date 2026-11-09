@@ -31,4 +31,5 @@ def polygon_to_mask(polygon: list[float], height: int = IMAGE_SIZE, width: int =
 
 
 def area(counts: str, height: int = IMAGE_SIZE, width: int = IMAGE_SIZE) -> int:
+    """Pixel count of a mask given as compressed RLE counts, without decoding it."""
     return int(mask_util.area({"size": [height, width], "counts": counts.encode("ascii")}))

@@ -35,6 +35,7 @@ class Scorer:
         self.pool = _pool(workers) if workers > 1 and len(probs) > 1 else None
 
     def predict(self, cfg: PostConfig) -> dict[str, list[Crop]]:
+        """Instances (as crops) of every image under ``cfg``."""
         jobs = [(k, p, cfg) for k, p in self.probs.items()]
         if self.pool is not None:
             return dict(self.pool.imap_unordered(_instances, jobs, chunksize=2))
@@ -45,6 +46,7 @@ class Scorer:
         return res
 
     def close(self):
+        """Shut down the worker pool (:func:`score` and :func:`grid_search` do this themselves)."""
         if self.pool is not None:
             self.pool.close()
             self.pool.join()
@@ -64,6 +66,12 @@ def score(probs: dict[str, np.ndarray], gt: dict[str, list[Crop]], cfg: PostConf
 def grid_search(probs: dict[str, np.ndarray], gt: dict[str, list[Crop]], base: PostConfig = PostConfig(),
                 grid: dict[str, list] | None = None, log=print,
                 workers: int | None = None) -> tuple[PostConfig, PQResult, list]:
+    """Exhaustive search over ``grid`` (field -> values, applied on top of ``base``) by pooled PQ.
+
+    Returns the best configuration, its result and one table row per configuration. Used to tune a
+    single fold during training (no ``--post`` given) and for the classical baseline; the final
+    post-processing is chosen by nested cross-validation (:mod:`filseg.components`).
+    """
     grid = grid or {"threshold": [0.35, 0.45, 0.55], "min_area": [100, 250, 500], "close_radius": [0, 4]}
     keys = list(grid)
     best_cfg, best_res, table = base, None, []

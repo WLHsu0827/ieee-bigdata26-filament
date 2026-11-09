@@ -12,6 +12,11 @@ MEAN, STD = 0.45, 0.225
 
 def build_model(arch: str = "Unet", encoder: str = "resnet34", weights: str | None = "imagenet",
                 classes: int = 1) -> torch.nn.Module:
+    """Network of segmentation-models-pytorch (``arch``, ``encoder``) with one grey input channel.
+
+    ``weights`` is the encoder pre-training used to start training; checkpoints are rebuilt with
+    ``None`` (random initialisation, then loaded), so inference downloads nothing.
+    """
     import segmentation_models_pytorch as smp
 
     cls = getattr(smp, arch)
@@ -69,6 +74,7 @@ def to_tensor(img01: np.ndarray, stats: tuple[float, float] = (MEAN, STD)) -> to
 
 
 def resize_image(img: np.ndarray, res: int) -> np.ndarray:
+    """Square image -> ``res`` x ``res`` (area interpolation; returned unchanged if already that size)."""
     if img.shape[0] == res:
         return img
     return cv2.resize(img, (res, res), interpolation=cv2.INTER_AREA)

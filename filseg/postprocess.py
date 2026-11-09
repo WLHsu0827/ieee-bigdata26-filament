@@ -38,6 +38,15 @@ def upsample(prob: np.ndarray, size: int = IMAGE_SIZE) -> np.ndarray:
 
 @dataclass
 class PostConfig:
+    """Probability map -> disjoint instances (:func:`instances_from_prob`).
+
+    Detection threshold ``threshold``, optional closing (``close_radius``) and hole filling,
+    8-connected components (optionally grouped when closer than ``merge_distance``); each component is
+    kept by the rule (``min_area``, ``min_mean_prob``, ``min_max_prob``) or, when ``scorer`` is set, by
+    the learned filter (score above ``min_score``); kept instances are redrawn at ``mask_threshold`` and
+    grown by ``dilate_radius``. The final configurations are ``configs/post_final_*.json``.
+    """
+
     threshold: float = 0.5
     close_radius: int = 0          # px at full (2048) resolution; 0 disables
     fill_holes: bool = True
@@ -182,6 +191,7 @@ def grow_labels(lab: np.ndarray, radius: int) -> np.ndarray:
 
 
 def label_to_crops(lab: np.ndarray) -> list[Crop]:
+    """Label map (0 = background, 1..n = instances) -> one :class:`~filseg.metrics.Crop` per instance."""
     crops = []
     for i, sl in enumerate(ndi.find_objects(lab), start=1):
         if sl is None:
