@@ -634,3 +634,42 @@ def test_make_submission_variants_share_the_maps(tmp_path):
     df = make_submission([(Square(), 64, "global")], tmp_path, PostConfig(threshold=0.5, min_area=0),
                          torch.device("cpu"), tta=1, variants=variants, variant_frames=frames)
     assert len(df) == 2 and set(frames) == {"strict"} and len(frames["strict"]) == 0
+
+
+def test_manifest_matches_the_documented_final_configs():
+    """The notebook reads its post-processing from ``weights/manifest.json``; the README and the report
+    name the files in ``configs/``. Both must describe the same final submissions."""
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    manifest = json.loads((root / "weights" / "manifest.json").read_text())
+
+    def config(name):
+        return json.loads((root / "configs" / name).read_text())
+
+    assert manifest["post"] == config("post_final_full.json")  # final submission B (submission.csv)
+    assert manifest["variants"]["rule"] == config("post_final_rule.json")  # final submission A (submission_rule.csv)
+    assert manifest["fast"]["post"] == config("post_final_fast.json")
+    for spec in (manifest["post"], manifest["variants"]["rule"], manifest["fast"]["post"]):
+        PostConfig(**spec)  # only known fields
+    files = [m["file"] for m in manifest["models"]]
+    assert sorted(m["fold"] for m in manifest["models"]) == sorted(list(range(manifest["nfolds"])) * 2)
+    assert set(manifest["fast"]["models"]) <= set(files)
+    for f in files:
+        assert (root / "weights" / f).stat().st_size > 10**6, f
+
+
+def test_pipeline_notebook_matches_its_generator():
+    """The committed (executed) notebook keeps the cells of ``notebooks/build_pipeline_notebook.py``."""
+    import importlib.util
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("build_pipeline_notebook",
+                                                  root / "notebooks" / "build_pipeline_notebook.py")
+    generator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generator)
+    cells = json.loads((root / "notebooks" / "pipeline.ipynb").read_text(encoding="utf-8"))["cells"]
+    assert [(c["cell_type"], "".join(c["source"])) for c in cells] == [(k, s) for k, s in generator.CELLS]
