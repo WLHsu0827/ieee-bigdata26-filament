@@ -197,8 +197,10 @@ transfer, never to tune.
 
 \textbf{Efficiency and reproducibility.} Executing the pipeline notebook on one T4 GPU for the 180
 test images takes 7.3--8.0\,s (ten networks, flip TTA $\times4$) plus about 0.5\,s (post-processing) per image in three
-runs; the \emph{fast} profile (five networks) takes 4.7--4.8\,+\,0.5\,s. The notebook reproduces the submission
-from the stored fp16 weights (agreement PQ 0.998 with the training-time predictions). Adding the four
+runs; the \emph{fast} profile (five networks) takes 4.7--4.8\,+\,0.5\,s. From the stored fp16 weights one run
+of the notebook writes both final submissions, the learned filter's (public 0.38) and the rule's (0.39), from
+the same maps; they agree with the files built from the training-time predictions on 1,074 of 1,076 and 1,071
+of 1,072 instances. Adding the four
 90\textdegree{} rotations to the test-time augmentation ($\times8$) raises the nested out-of-fold PQ by only
 0.001--0.003 for twice the network time, so the submission keeps $\times4$.
 

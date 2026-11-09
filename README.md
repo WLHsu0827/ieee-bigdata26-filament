@@ -46,8 +46,9 @@ Experiments and numbers: `docs/experiments.md`. Report: `docs/report/main.tex` (
 
 `notebooks/pipeline.ipynb` (committed with the outputs of a run on a Kaggle T4 GPU) runs the whole
 inference pipeline from the weights
-in `weights/` (no training needed): it predicts every test image, writes
-`submission.csv`, shows predictions and, if the training annotations are
+in `weights/` (no training needed): it predicts every test image and writes both final submissions
+from the same probability maps, `submission.csv` (learned component filter) and `submission_rule.csv`
+(three-parameter rule). It also shows predictions and, if the training annotations are
 available, recomputes the hold-out PQ, IoU / Dice distributions and
 one-to-many / many-to-one statistics.
 
@@ -68,7 +69,7 @@ end to end on one T4 GPU for the 180 test images (`scripts/run_notebook.py`):
 
 | profile | networks | out-of-fold PQ (nested CV)* | time per image |
 |---|---|---|---|
-| `full` (submission) | 5 x ResNet34 + 5 x EfficientNetV2-S U-Nets | 0.447 | 8.0-8.5 s |
+| `full` (final submissions) | 5 x ResNet34 + 5 x EfficientNetV2-S U-Nets | 0.447 | 8.0-8.5 s |
 | `fast` | 5 x EfficientNetV2-S U-Nets | 0.444 | 5.2-5.3 s |
 
 \* Both encoders use the same five folds, so a training image's out-of-fold map averages only the

@@ -78,8 +78,11 @@ print("torch", torch.__version__, "| device:", device)"""),
 
 | profile | networks | out-of-fold PQ (nested CV, 707 images) | T4 GPU time per image |
 |---|---|---|---|
-| `full` | 5 x U-Net ResNet34 + 5 x U-Net EfficientNetV2-S (one per CV fold) | 0.447 | ~12.8 s networks + ~0.5 s post-processing |
-| `fast` | 5 x U-Net EfficientNetV2-S | 0.444 | ~7.1 s + ~0.5 s |
+| `full` | 5 x U-Net ResNet34 + 5 x U-Net EfficientNetV2-S (one per CV fold) | 0.447 | 7.3-8.0 s networks + ~0.5 s post-processing |
+| `fast` | 5 x U-Net EfficientNetV2-S | 0.444 | 4.7-4.8 s + ~0.5 s |
+
+Times are end to end for the 180 test images, measured by executing this notebook on a Kaggle T4
+(the inference cell below prints the timing of its own run).
 
 Post-processing: threshold, connected components, a learned component filter (gradient-boosted
 trees on per-component features, stored as JSON in the manifest) and redrawing of each kept
@@ -101,7 +104,8 @@ summary"""),
     ("markdown", "## 3. Inference on the test images -> `submission.csv`\n\n"
                  "The `full` profile also writes `submission_rule.csv`: the same probability maps with the "
                  "three-parameter rule chosen by nested cross-validation (mean probability >= 0.85, peak >= 0.99) "
-                 "instead of the learned filter."),
+                 "instead of the learned filter. Both files were submitted to the competition (public "
+                 "leaderboard: 0.38 for `submission.csv`, 0.39 for `submission_rule.csv`)."),
     ("code", """test_files = sorted((DATA_DIR / "test" / "test_images").glob("*.jp*g"))
 if LIMIT:
     test_files = test_files[:LIMIT]
