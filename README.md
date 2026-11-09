@@ -54,9 +54,13 @@ one-to-many / many-to-one statistics.
 
 ```bash
 git clone --depth 1 <repository URL>   # ~0.5 GB, mostly the ten weight files (43-47 MB each)
-pip install -r requirements.txt
+pip install -r requirements.txt        # Python 3.11-3.13 (the committed run used 3.13)
 jupyter nbconvert --to notebook --execute notebooks/pipeline.ipynb   # or open and Run All
 ```
+
+Every pinned version in `requirements.txt` has binary wheels for Python 3.11, 3.12 and 3.13 (checked on
+PyPI for Linux x86_64, and for Windows with 3.12); Python 3.10 lacks `scipy==1.16.3` and Python 3.14 lacks
+wheels for `numpy==2.1.3` and three other pins.
 
 Apart from `pip install`, nothing is downloaded: the networks are built without pretrained
 weights and loaded from `weights/`. `python scripts/check_weights.py` checks this on a CPU

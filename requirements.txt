@@ -1,5 +1,6 @@
 # Versions of the environment in which notebooks/pipeline.ipynb was executed end to end
 # (Kaggle GPU image, Python 3.13.16; see scripts/run_notebook.py).
+# All pins have binary wheels for Python 3.11-3.13 (Python 3.10 lacks scipy 1.16.3, 3.14 lacks numpy 2.1.3).
 numpy==2.1.3
 pandas==2.3.3
 opencv-python-headless==4.14.0.94
