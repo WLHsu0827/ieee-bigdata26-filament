@@ -1,8 +1,8 @@
 # Solar filament segmentation: extended technical description
 
 Companion to the four-page report **Consensus-Trained Full-Resolution U-Nets with PQ-Aware
-Instance Selection for Solar Filament Segmentation** (`docs/report/main.tex`; build the PDF with
-`python docs/report/build_pdf.py --out build/`). It describes the same method in more detail and
+Instance Selection** (`docs/report/main.tex`, written in the competition's official template; build the
+PDF with `python docs/report/build_pdf.py --out build/`). It describes the same method in more detail and
 with intermediate numbers; every experiment, including the negative ones, is logged in
 `docs/experiments.md`.
 
@@ -227,7 +227,7 @@ from the National Oceanic and Atmospheric Administration. The GONG network of in
 the Big Bear Solar Observatory, High Altitude Observatory, Learmonth Solar Observatory, Udaipur Solar
 Observatory, Instituto de Astrofísica de Canarias, and Cerro Tololo Interamerican Observatory.
 
-## References (BibTeX: `docs/report/refs.bib`)
+## References (BibTeX: `docs/report/main.bib`)
 
 * MAGFiLO: Manually Annotated GONG Filaments from H-Alpha Observations, Scientific Data (2024),
   doi:10.1038/s41597-024-03876-y.

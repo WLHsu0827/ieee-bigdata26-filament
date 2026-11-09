@@ -117,7 +117,9 @@ def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
                path: Path = FIG / "evaluation.png") -> Path:
     """Rubric figure for out-of-fold predictions, in the style of the organisers' self-evaluation:
     IoU and Dice distributions of overlapping pairs, one-to-many / many-to-one matching degrees,
-    and recall by filament size. Also writes the numbers to ``<path>.json``."""
+    and recall by filament size. Also writes the numbers to ``<path>.json``, the IoU / Dice arrays to
+    ``<path>.npz`` and bootstrap intervals over images to ``<stem>_uncertainty.json``; the row layout
+    goes to ``<path>``, the 2 x 3 grid with error bars to ``<stem>_grid.png``."""
     import json
 
     import numpy as np
@@ -146,18 +148,29 @@ def evaluation(probs_paths: list, post_json: Path, gt_cache: Path | None,
     res, odf = evaluate(gt, preds)
     iou, dice = analysis.overlap_distributions(odf)
     gdeg, pdeg = matching_degrees(odf)
-    by_size = analysis.by_size(analysis.gt_table(gt, odf))
+    gt_tab = analysis.gt_table(gt, odf)
+    by_size = analysis.by_size(gt_tab)
     tax = analysis.error_taxonomy(gt, preds, odf)
+    size_ci = analysis.by_size_bootstrap(gt_tab)  # 95 % intervals over images (error bars of the report figure)
+    pq_ci = analysis.pq_bootstrap(odf)
 
     recall = [(str(s).replace(".0", ""), float(r)) for s, r in zip(by_size["size"], by_size["match_rate"])]
+    recall_ci = list(zip(size_ci["ci_low"].astype(float), size_ci["ci_high"].astype(float)))
     header = (f"out-of-fold: {len(probs)} images, {len(gt)} annotator sets -- PQ {res.pq:.4f} "
               f"(SQ {res.sq:.3f}, RQ {res.rq:.3f}; TP {res.tp}, FP {res.fp}, FN {res.fn})")
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path.with_suffix(".npz"), iou=iou, dice=dice)  # for re-plotting without recomputation
-    draw_evaluation(iou, dice, gdeg, pdeg, recall, tax, header, path, layout="row")
+    draw_evaluation(iou, dice, gdeg, pdeg, recall, tax, header, path, layout="row", recall_ci=recall_ci)
     stats = dict(images=len(probs), entries=len(gt), pq=res.pq, sq=res.sq, rq=res.rq, tp=res.tp, fp=res.fp, fn=res.fn)
     draw_evaluation(iou, dice, gdeg, pdeg, recall, tax, header, path.with_name(path.stem + "_grid.png"), layout="grid",
-                    stats=stats)
+                    stats=stats, recall_ci=recall_ci, pq_ci=pq_ci)
+    uncertainty = {"method": "95 % bootstrap intervals over images (2,000 resamples of whole images)",
+                   "pq_ci95": [round(pq_ci[0], 4), round(pq_ci[1], 4)],
+                   "recall_by_size": {str(s): {"n": int(n), "rate": round(float(r), 4),
+                                               "ci95": [round(float(lo), 4), round(float(hi), 4)]}
+                                      for s, n, r, lo, hi in size_ci[["size", "n", "match_rate", "ci_low",
+                                                                      "ci_high"]].itertuples(index=False)}}
+    path.with_name(path.stem + "_uncertainty.json").write_text(json.dumps(uncertainty, indent=1) + "\n")
     post = json.loads(Path(post_json).read_text())
     if post.get("scorer"):  # summarise the learned filter (the full trees live in the post-processing JSON)
         post["scorer"] = {"trees": len(post["scorer"]["trees"]), "features": post["scorer"]["features"]}
@@ -236,10 +249,12 @@ def _short_size(label: str) -> str:
 
 
 def draw_evaluation(iou, dice, gdeg: dict, pdeg: dict, recall: list, tax: dict, header: str, path: Path,
-                    layout: str = "row", stats: dict | None = None) -> Path:
+                    layout: str = "row", stats: dict | None = None, recall_ci: list | None = None,
+                    pq_ci: tuple | None = None) -> Path:
     """Rubric figure: IoU / Dice of overlapping pairs, one-to-many / many-to-one degrees, recall by size
     and error causes. ``layout``: ``row`` (1 x 5 with long labels, notebook) or ``grid`` (2 x 3 with short
-    labels and a summary panel, sized for a two-column-wide figure in the report)."""
+    labels and a summary panel, sized for a two-column-wide figure in the report). ``recall_ci``: (low, high)
+    per size bin, drawn as error bars; ``pq_ci``: (low, high) of PQ, shown in the summary panel."""
     import numpy as np
 
     grid = layout == "grid"
@@ -280,7 +295,13 @@ def draw_evaluation(iou, dice, gdeg: dict, pdeg: dict, recall: list, tax: dict, 
     else:
         ax[2].set_title("matching degrees (IoU > 0): GT 1:n right, prediction n:1 left", fontsize=fs + 1)
     ax[2].set_ylabel("count", fontsize=fs)
-    ax[3].bar(range(len(recall)), [r for _, r in recall], color="navy", alpha=0.7, edgecolor="black")
+    rates = np.array([r for _, r in recall])
+    yerr = None
+    if recall_ci is not None:
+        lo, hi = np.array(recall_ci, float).T
+        yerr = np.vstack([rates - lo, hi - rates]).clip(min=0)
+    ax[3].bar(range(len(recall)), rates, color="navy", alpha=0.7, edgecolor="black", yerr=yerr, capsize=3,
+              error_kw={"elinewidth": 1, "ecolor": "black"})
     if grid:
         ax[3].set_xticks(range(len(recall)), [_short_size(lbl) for lbl, _ in recall], rotation=45, ha="right",
                          rotation_mode="anchor", fontsize=fs - 1)
@@ -315,6 +336,7 @@ def draw_evaluation(iou, dice, gdeg: dict, pdeg: dict, recall: list, tax: dict, 
 
         lines = [f"out-of-fold: {num('images')} images,", f"{num('entries')} annotator sets", "",
                  f"PQ {num('pq', '.3f')}  (SQ {num('sq', '.3f')}, RQ {num('rq', '.3f')})",
+                 *([f"95 % interval {pq_ci[0]:.3f}\u2013{pq_ci[1]:.3f}"] if pq_ci is not None else []),
                  f"TP {num('tp')}   FP {num('fp')}   FN {num('fn')}", "",
                  "overlapping pairs, mean:", f"IoU {iou.mean():.3f}, Dice {dice.mean():.3f}", "",
                  "PQ upper bounds:", f"  fragments grouped {ub['group_fragments']:.3f}",
@@ -347,9 +369,16 @@ if __name__ == "__main__":
                   f"(SQ {ev['sq']:.3f}, RQ {ev['rq']:.3f}; TP {ev['tp']}, FP {ev['fp']}, FN {ev['fn']})")
         stats = {k: ev[k] for k in ("images", "entries", "pq", "sq", "rq", "tp", "fp", "fn")}
         recall = [(k.replace(".0", ""), v) for k, v in ev["recall_by_size"].items()]
+        unc_path = Path(sys.argv[3]).with_name(Path(sys.argv[3]).stem + "_uncertainty.json")  # written by evaluation
+        recall_ci = pq_ci = None
+        if unc_path.exists():
+            unc = json.loads(unc_path.read_text())
+            recall_ci = [tuple(unc["recall_by_size"][k]["ci95"]) for k in ev["recall_by_size"]]
+            pq_ci = tuple(unc["pq_ci95"])
         print(draw_evaluation(arrays["iou"], arrays["dice"], ev["gt_degrees"], ev["pred_degrees"], recall,
                               ev["error_taxonomy"], header, Path(sys.argv[4]),
-                              layout=sys.argv[5] if len(sys.argv) > 5 else "grid", stats=stats))
+                              layout=sys.argv[5] if len(sys.argv) > 5 else "grid", stats=stats,
+                              recall_ci=recall_ci, pq_ci=pq_ci))
     elif what == "evaluation":  # evaluation <post.json> <gt_crops.pkl | none> <out.png> <val_probs.npz | glob> [...]
         gt_arg = None if sys.argv[3].lower() == "none" else Path(sys.argv[3])
         print(evaluation(sys.argv[5:], Path(sys.argv[2]), gt_arg, Path(sys.argv[4])))

@@ -48,6 +48,46 @@ def by_size(table: pd.DataFrame, bins=AREA_BINS) -> pd.DataFrame:
                          "mean_best_iou": g["best_iou"].mean()}).reset_index()
 
 
+def by_size_bootstrap(table: pd.DataFrame, bins=AREA_BINS, draws: int = 2000, seed: int = 0) -> pd.DataFrame:
+    """Match rate per area bin of a :func:`gt_table` with a 95 % bootstrap interval over images.
+
+    Whole images are resampled with replacement, so the filaments of one image (which share its
+    observing conditions and annotators) stay together. Bins without filaments are omitted, as in
+    :func:`by_size`.
+    """
+    codes = pd.cut(table["area"], bins, right=False, labels=False)
+    labels = pd.cut(table["area"], bins, right=False).cat.categories
+    images, img_idx = np.unique(table["image_id"].to_numpy(), return_inverse=True)
+    counts = np.zeros((len(images), len(bins) - 1, 2))
+    ok = codes.notna().to_numpy()
+    rows, cols = img_idx[ok], codes[ok].astype(int).to_numpy()
+    np.add.at(counts, (rows, cols, 0), table["matched"].to_numpy(float)[ok])
+    np.add.at(counts, (rows, cols, 1), 1.0)
+    rng = np.random.default_rng(seed)
+    boot = np.empty((draws, len(bins) - 1))
+    for d in range(draws):
+        s = counts[rng.integers(0, len(images), len(images))].sum(0)
+        boot[d] = s[:, 0] / np.maximum(s[:, 1], 1)
+    total = counts.sum(0)
+    keep = total[:, 1] > 0
+    lo, hi = np.percentile(boot, [2.5, 97.5], axis=0)
+    return pd.DataFrame({"size": labels[keep], "n": total[keep, 1].astype(int),
+                         "match_rate": total[keep, 0] / total[keep, 1], "ci_low": lo[keep], "ci_high": hi[keep]})
+
+
+def pq_bootstrap(overlap_df: pd.DataFrame, draws: int = 2000, seed: int = 0) -> tuple[float, float]:
+    """95 % bootstrap interval of the pooled PQ over images (per-entry table of ``metrics.evaluate``)."""
+    per_image = overlap_df.groupby("image_id")[["sum_iou", "tp", "fp", "fn"]].sum().to_numpy(float)
+    rng = np.random.default_rng(seed)
+    values = np.empty(draws)
+    for d in range(draws):
+        s = per_image[rng.integers(0, len(per_image), len(per_image))].sum(0)
+        den = s[1] + 0.5 * s[2] + 0.5 * s[3]
+        values[d] = s[0] / den if den else 0.0
+    lo, hi = np.percentile(values, [2.5, 97.5])
+    return float(lo), float(hi)
+
+
 def overlap_distributions(overlap_df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     """IoU and Dice values of all overlapping (score > 0) GT/prediction pairs."""
     iou = np.concatenate([np.asarray(m).ravel() for m in overlap_df["iou_matrix"]] or [np.zeros(0)])

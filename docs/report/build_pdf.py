@@ -1,7 +1,10 @@
 """Build the report PDF from ``docs/report`` (pdflatex + bibtex, figures from ``docs/figures``).
 
-Installs TeX Live with apt-get when ``pdflatex`` is missing (Linux, e.g. a Kaggle kernel), compiles in
-a temporary copy and writes ``main.pdf`` and ``main.log`` to ``--out``.
+The report uses the competition's official template (ACM ``acmart``, ``sigconf``), which needs the Linux
+Libertine, newtx and Inconsolata fonts (Debian package ``texlive-fonts-extra``) and, through ``hyperxmp``,
+``binhex.tex`` (``texlive-plain-generic``). Installs TeX Live with apt-get when ``pdflatex`` is missing
+(Linux, e.g. a Kaggle kernel), compiles in a temporary copy and writes ``main.pdf`` and ``main.log`` to
+``--out``.
 
 Usage:
     python docs/report/build_pdf.py --out build/
@@ -18,7 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = ["texlive-latex-base", "texlive-latex-recommended", "texlive-latex-extra", "texlive-publishers",
-            "texlive-fonts-recommended"]
+            "texlive-fonts-recommended", "texlive-fonts-extra", "texlive-plain-generic"]
 
 
 def main() -> None:
@@ -42,7 +45,8 @@ def main() -> None:
     if (cwd / "main.pdf").exists():
         shutil.copy(cwd / "main.pdf", args.out / "main.pdf")
     pages = re.search(r"Output written on main\.pdf \((\d+) pages?", log)
-    warnings = [ln for ln in log.splitlines() if ln.startswith(("LaTeX Warning", "Overfull", "Underfull", "!"))]
+    warnings = [ln for ln in log.splitlines()
+                if ln.startswith(("LaTeX Warning", "Class acmart Warning", "Overfull", "Underfull", "!"))]
     print(f"pages: {pages.group(1) if pages else 'no PDF'}; {len(warnings)} warnings / errors", flush=True)
     for ln in warnings[:40]:
         print("  " + ln)

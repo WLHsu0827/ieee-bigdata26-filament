@@ -18,3 +18,5 @@ kaggle.json
 .env
 # notebook outputs
 /submission*.csv
+# report PDF built by docs/report/build_pdf.py --out build/
+/build/

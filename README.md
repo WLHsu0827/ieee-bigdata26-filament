@@ -38,9 +38,10 @@ IoU exceeds 0.5), computed against every annotator's set of polygons separately.
    decides which candidates to keep. Kept instances are redrawn where the
    probability exceeds 0.5.
 
-Experiments and numbers: `docs/experiments.md`. Report: `docs/report/main.tex` (PDF:
-`python docs/report/build_pdf.py --out build/`); a longer version with more detail is
-`docs/report_extended.md`. Figures: `docs/figures/` (pipeline, out-of-fold evaluation, morphology examples).
+Experiments and numbers: `docs/experiments.md`. Report: `docs/report/main.tex`, written in the
+competition's official template (ACM `acmart`; PDF: `python docs/report/build_pdf.py --out build/`); a longer
+version with more detail is `docs/report_extended.md`. Figures: `docs/figures/` (pipeline, out-of-fold
+evaluation, morphology examples).
 
 ## Reproducing the submission
 

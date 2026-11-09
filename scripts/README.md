@@ -36,6 +36,7 @@ the top-level README.
 | `make_figures.py` | all figures in `docs/figures/` (pipeline, out-of-fold evaluation with `docs/evaluation*.json`, overlays, morphology examples) |
 | `ensemble_shift.py` | label-free check that a selection tuned on two-network out-of-fold maps transfers to the ten-network average of the submission; `docs/ensemble_shift.json` |
 | `split_noise.py` | sampling noise of a score on 90 images, the size of the public split (SD 0.012); `docs/split_noise.json` |
+| `nested_uncertainty.py` | uncertainty of the two final configurations in Table 1 of the report: 95 % bootstrap intervals over images, spread over the five folds and the paired difference of the learned filter and the rule; `docs/nested_uncertainty.json` |
 | `compare_models.py` | ablation tables: models and ensembles scored on the same out-of-fold images with a fixed and a nested post-processing (used for the semi-supervised students against their teachers) |
 | `eval_probs.py` | scores validation maps with one post-processing configuration, with a breakdown by annotator set and image |
 | `analyze_oof.py` | early post-processing analysis of single-model maps; also the shared loaders `load_probs` and `load_gt` |

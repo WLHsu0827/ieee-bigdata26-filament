@@ -636,6 +636,30 @@ def test_make_submission_variants_share_the_maps(tmp_path):
     assert len(df) == 2 and set(frames) == {"strict"} and len(frames["strict"]) == 0
 
 
+def test_by_size_bootstrap_matches_by_size_and_brackets_it():
+    from filseg import analysis
+
+    rng = np.random.default_rng(0)
+    rows = []
+    for img in range(30):
+        for _ in range(6):
+            area = int(rng.choice([100, 800, 3000]))
+            rows.append((f"e-{img}", f"img{img}", area, 0.0, bool(rng.random() < (0.3 if area < 300 else 0.7))))
+    table = pd.DataFrame(rows, columns=["entry_id", "image_id", "area", "best_iou", "matched"])
+    ref = analysis.by_size(table)
+    boot = analysis.by_size_bootstrap(table, draws=300)
+    assert list(boot["n"]) == list(ref["n"])
+    assert np.allclose(boot["match_rate"], ref["match_rate"])
+    assert ((boot["ci_low"] <= boot["match_rate"]) & (boot["match_rate"] <= boot["ci_high"])).all()
+    assert (boot["ci_high"] > boot["ci_low"]).all()
+
+    odf = pd.DataFrame({"image_id": ["a", "a", "b", "c"], "sum_iou": [1.4, 0.6, 0.7, 0.0],
+                        "tp": [2, 1, 1, 0], "fp": [1, 0, 1, 2], "fn": [0, 1, 0, 1]})
+    lo, hi = analysis.pq_bootstrap(odf, draws=300)
+    pooled = 2.7 / (4 + 0.5 * 4 + 0.5 * 2)
+    assert lo <= pooled <= hi and lo < hi
+
+
 def test_manifest_matches_the_documented_final_configs():
     """The notebook reads its post-processing from ``weights/manifest.json``; the README and the report
     name the files in ``configs/``. Both must describe the same final submissions."""

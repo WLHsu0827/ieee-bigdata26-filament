@@ -144,8 +144,12 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   310 too large, 295 merged, 111 fragmented. GT overlapping >= 2 predictions: 2.8 %; predictions overlapping
   >= 2 GT: 2.6 %. Mean IoU / Dice of overlapping pairs 0.606 / 0.736. `docs/evaluation*.json`, figures in
   `docs/figures/evaluation*.png` (the report uses the 2 x 3 `evaluation_grid.png`; re-run on Kaggle 11-08 with
-  identical numbers; `python scripts/make_figures.py evaluation-replot docs/evaluation.npz docs/evaluation.json
-  <out.png> grid` redraws it from the stored IoU / Dice arrays without recomputation).
+  identical numbers; re-run 11-09, again with an identical `evaluation.json`, to add 95 % bootstrap intervals
+  over images (2,000 resamples): PQ 0.453-0.471, recall per size bin as error bars, e.g. 0.21-0.31 below 300 px
+  and 0.54-0.71 at >= 10k px, in `docs/evaluation_uncertainty.json`; both layouts draw the error bars, the grid
+  also prints the PQ interval; the executed notebook still shows the earlier figure without them;
+  `python scripts/make_figures.py evaluation-replot docs/evaluation.npz docs/evaluation.json
+  <out.png> grid` redraws it from the stored IoU / Dice arrays and the intervals without recomputation).
 * Ensemble-size shift (11-08, label-free, `scripts/ensemble_shift.py` on the K1 test maps; summary in
   `docs/ensemble_shift.json`): selection is tuned on out-of-fold maps that average only the two networks of a
   fold, the submission averages ten. On the 180 test images, with the same configuration, the ten-network
@@ -166,6 +170,12 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   SD 0.012 (5-95 %: 0.423-0.463 for rule A, whose 707-image PQ is 0.444), so the public leaderboard (about
   90 test images) cannot resolve differences of a few thousandths; the paired difference of two configurations
   on the same subsets has SD 0.004. Decisions therefore rest on nested CV over all 707 images.
+* Uncertainty of the final estimates (11-09, `scripts/nested_uncertainty.py` on the fil-d1 candidate table of
+  the final shape, r = 0.77; `docs/nested_uncertainty.json`): rule A nested 0.4432, 95 % bootstrap interval over
+  images [0.434, 0.453] (SD 0.0048), per outer fold 0.450 / 0.440 / 0.437 / 0.443 / 0.445 (SD 0.005); learned
+  filter B 0.4470 [0.438, 0.457] (SD 0.0048), per fold 0.454 / 0.445 / 0.438 / 0.451 / 0.449 (SD 0.006);
+  paired B - A +0.0038 (SD 0.0013, 95 % [0.0012, 0.0065], <= 0 in 0.2 % of 4,000 resamples). Single networks
+  with the fixed rule over five folds: ResNet34 0.422 +- 0.005, EfficientNetV2-S 0.432 +- 0.007 (SD).
 * Direction 1 of the 11-08 push (`scripts/extent_levels.py`, Kaggle CPU kernel fil-d1; candidates of the final
   shape t 0.25, c0, all components, 9,394 on 707 images; nested CV over the CV folds, learned filter as in
   production): (i) **per-candidate outline level** (one regressor over candidate x level rows predicts the per-entry
