@@ -39,7 +39,9 @@ IoU exceeds 0.5), computed against every annotator's set of polygons separately.
    probability exceeds 0.5.
 
 Experiments and numbers: `docs/experiments.md`. Report: `docs/report/main.tex`, written in the
-competition's official template (ACM `acmart`; PDF: `python docs/report/build_pdf.py --out build/`); a longer
+competition's official template (ACM `acmart`; PDF: `python docs/report/build_pdf.py --out build/`, which fills
+the author block, kept as placeholders in the repository, from `--author`, `--institution`, `--city`, `--country`
+and `--email`); a longer
 version with more detail is `docs/report_extended.md`. Figures: `docs/figures/` (pipeline, out-of-fold
 evaluation, morphology examples).
 

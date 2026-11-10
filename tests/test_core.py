@@ -697,3 +697,23 @@ def test_pipeline_notebook_matches_its_generator():
     spec.loader.exec_module(generator)
     cells = json.loads((root / "notebooks" / "pipeline.ipynb").read_text(encoding="utf-8"))["cells"]
     assert [(c["cell_type"], "".join(c["source"])) for c in cells] == [(k, s) for k, s in generator.CELLS]
+
+
+def test_report_author_block_is_filled_only_in_the_build_copy():
+    """The committed report keeps the author-block placeholders (no personal data in the repository);
+    ``docs/report/build_pdf.py`` replaces them in its build copy."""
+    import importlib.util
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("build_pdf", root / "docs" / "report" / "build_pdf.py")
+    build_pdf = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_pdf)
+    tex = (root / "docs" / "report" / "main.tex").read_text(encoding="utf-8")
+    assert all(p in tex for p in build_pdf.AUTHOR_PLACEHOLDERS.values())
+    values = {"author": "Ada Lovelace", "institution": "", "city": "London", "country": "UK",
+              "email": "ada@example.org"}
+    filled, left = build_pdf.fill_author(tex, values)
+    assert left == ["[Institution (optional)]"]
+    assert "\\author{Ada Lovelace}" in filled and "\\email{ada@example.org}" in filled
+    assert filled.count("\n") == tex.count("\n")
