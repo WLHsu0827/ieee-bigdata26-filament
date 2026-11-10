@@ -61,6 +61,11 @@ pip install -r requirements.txt        # Python 3.11-3.13 (the committed run use
 jupyter nbconvert --to notebook --execute notebooks/pipeline.ipynb   # or open and Run All
 ```
 
+The notebook needs only the competition's test images. It looks for the unzipped competition data as
+`MAGFiLO_1.0_Kaggle_2026/` inside or next to the repository, then in the folder named by `$FILSEG_DATA`,
+then under `/kaggle/input` (competition data attached to a Kaggle notebook). It writes `submission.csv` and
+`submission_rule.csv` to the repository root.
+
 Every pinned version in `requirements.txt` has binary wheels for Python 3.11, 3.12 and 3.13 (checked on
 PyPI for Linux x86_64, and for Windows with 3.12); Python 3.10 lacks `scipy==1.16.3` and Python 3.14 lacks
 wheels for `numpy==2.1.3` and three other pins.
