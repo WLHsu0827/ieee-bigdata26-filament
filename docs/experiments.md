@@ -176,6 +176,14 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   first two test images both submissions agree with the committed run (fil-nb-verify v3, T4 GPU) at PQ 0.9999
   (every instance matched at IoU > 0.99; fp32 on the CPU vs mixed precision on the GPU). Without a GPU the full
   profile needs 760 s per image (8 s on a T4).
+* Reference files (11-12, `submissions/`): the two submitted files, downloaded back from Kaggle with the API
+  (`competition_download_submission`): B, ref 58107878, 303,250 bytes, SHA-256 18d75e35...455c; A, ref 58109804,
+  296,445 bytes, a6e10ecf...36bf. They equal the `submission.csv` of the notebook runs fil-nb-verify v2 and v3
+  (byte-identical to each other) and the `submission_rule.csv` of v3, the run committed with the notebook. The
+  first run v1, made before the fp16 NaN fallback in `predict_batch`, differs in bytes but agrees with v2 at
+  PQ 1.0000 (1,076 of 1,076 instances, all at IoU > 0.99; 177 of the 180 test images have instances).
+  `compare_submissions.py --b-images-only` on the two-image CPU re-run (fil-fresh v2): PQ 0.9999 against both
+  files; without the option the 175 skipped images count as misses (PQ 0.0037).
 * Public-split noise (11-08, `scripts/split_noise.py` on the K1 out-of-fold maps, Kaggle CPU kernel fil-noise;
   `docs/split_noise.json`): per-image PQ counts of the final configurations, pooled PQ over 4,000 random
   90-image subsets of the 707 images. A score on 90 images scatters around the score on all images with

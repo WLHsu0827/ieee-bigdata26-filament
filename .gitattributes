@@ -1,3 +1,5 @@
 * text=auto eol=lf
 *.ipynb text eol=lf
 *.pt binary
+# the files submitted to Kaggle, kept byte for byte (their SHA-256 are listed in the README)
+submissions/*.csv -text

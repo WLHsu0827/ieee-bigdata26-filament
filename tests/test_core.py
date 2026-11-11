@@ -717,3 +717,24 @@ def test_report_author_block_is_filled_only_in_the_build_copy():
     assert left == ["[Institution (optional)]"]
     assert "\\author{Ada Lovelace}" in filled and "\\email{ada@example.org}" in filled
     assert filled.count("\n") == tex.count("\n")
+
+
+def test_compare_submissions_scores_a_partial_rerun_on_its_images():
+    """``scripts/compare_submissions.py``: a re-run of only some test images (``FILSEG_LIMIT_TEST``) agrees
+    perfectly on those images with ``b_images_only``; otherwise the images it skipped count as misses."""
+    import importlib.util
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("compare_submissions", root / "scripts" / "compare_submissions.py")
+    compare = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(compare)
+    masks = [box(10, 10, 30, 30), box(200, 200, 20, 50), box(500, 500, 40, 40)]
+    a = pd.DataFrame({"filament_id": ["imgA_1", "imgA_2", "imgB_1"], "segmentation_rle": [rle.encode(m) for m in masks]})
+    b = a.iloc[:2].copy()  # the re-run predicted only imgA
+    full = compare.agreement(a, b)
+    assert (full["images"], full["tp"], full["fp"], full["fn"]) == (2, 2, 0, 1)
+    assert full["pq"] == pytest.approx(2 / 2.5)
+    part = compare.agreement(a, b, b_images_only=True)
+    assert (part["images"], part["n_a"], part["tp"], part["fn"]) == (1, 2, 2, 0)
+    assert part["pq"] == pytest.approx(1.0) and part["matched"][0.99] == 1.0

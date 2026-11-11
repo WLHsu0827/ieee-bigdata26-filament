@@ -67,6 +67,22 @@ The notebook needs only the competition's test images. It looks for the unzipped
 then under `/kaggle/input` (competition data attached to a Kaggle notebook). It writes `submission.csv` and
 `submission_rule.csv` to the repository root.
 
+`submissions/` holds the two files submitted to Kaggle, byte for byte (downloaded back from Kaggle):
+`submission.csv` (final submission B, Kaggle ref 58107878, public score 0.38; SHA-256
+`18d75e35cb3d42df61b863a5636c3c54b099effa25ad7e7748940fee186f455c`) and `submission_rule.csv` (final submission A,
+ref 58109804, public score 0.39; `a6e10ecfe416aec6c76fe8a58f1b59a71b56b6117780d4ffc3bda654461f36bf`). The committed
+notebook run wrote exactly these files, and two runs of the committed notebook on Kaggle T4 GPUs gave a
+byte-identical `submission.csv`. To check a run against them:
+
+```bash
+python scripts/compare_submissions.py submissions/submission.csv submission.csv             # B; expect PQ 1.0000
+python scripts/compare_submissions.py submissions/submission_rule.csv submission_rule.csv   # A
+```
+
+Without a GPU, `FILSEG_LIMIT_TEST=2` makes the notebook predict only the first two test images (about 25 min in
+a Kaggle CPU session); add `--b-images-only` to compare only those images (this check gave PQ 0.9999 for both
+files).
+
 Every pinned version in `requirements.txt` has binary wheels for Python 3.11, 3.12 and 3.13 (checked on
 PyPI for Linux x86_64, and for Windows with 3.12); Python 3.10 lacks `scipy==1.16.3` and Python 3.14 lacks
 wheels for `numpy==2.1.3` and three other pins.
@@ -145,6 +161,7 @@ python scripts/run_notebook.py --profile full --weights weights/manifest.json --
 | `configs/` | post-processing configurations: `post_final_rule.json` (final submission A), `post_final_full.json` (final submission B, notebook default), `post_final_fast.json` (fast profile) |
 | `notebooks/` | `pipeline.ipynb` (executed) and its generator |
 | `weights/` | the ten fp16 networks (one per encoder and fold) and `manifest.json` (files, SHA-256, training arguments, post-processing of both profiles) |
+| `submissions/` | the two files submitted to Kaggle, byte for byte, to check a re-run of the notebook with `scripts/compare_submissions.py` |
 | `docs/` | experiment log, report, figures, evaluation numbers, paired comparisons of the pilot experiments (`gate/`, `gate3/`), list of the external images |
 | `kaggle/` | builders for self-contained Kaggle kernels and Colab notebooks |
 | `tests/` | unit tests (`python -m pytest tests`) |
