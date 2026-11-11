@@ -184,6 +184,24 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   PQ 1.0000 (1,076 of 1,076 instances, all at IoU > 0.99; 177 of the 180 test images have instances).
   `compare_submissions.py --b-images-only` on the two-image CPU re-run (fil-fresh v2): PQ 0.9999 against both
   files; without the option the 175 skipped images count as misses (PQ 0.0037).
+* torch builds for older GPUs and drivers (11-12). `pip install -r requirements.txt` installs PyPI's torch 2.11.0,
+  on Linux the CUDA 13.0 build (`2.11.0+cu130`), the same build as the committed run (`versions.json` of
+  fil-nb-verify v3). PyPI's Windows wheel is the CPU build: its CUDA dependencies are marked Linux-only, and it
+  has the size of the CPU build on PyTorch's index (109 MiB; the Windows CUDA 12.6 and 13.0 builds there have
+  2,476 and 1,827 MiB, 506 MiB for PyPI's Linux wheel). CUDA 13.x needs driver r580 or newer and supports "all
+  NVIDIA architectures from Turing through Grace Blackwell" (CUDA 13.0 release notes); CUDA 12.x builds run on
+  drivers from 525 on (minor version compatibility, CUDA release notes table 3). PyTorch 2.11's build script
+  (`.ci/manywheel/build_cuda.sh` at v2.11.0) compiles the CUDA 12.6 builds for compute capability 5.0, 6.0, 7.0,
+  7.5, 8.0, 8.6 and 9.0, the CUDA 12.8 and 13.0 builds for 7.5, 8.0, 8.6, 9.0, 10.0 and 12.0. The CUDA 12.6 build
+  installs cuDNN 9.10.2.21, whose CUDA 12 build supports compute capability 5.0 to 9.0 with driver 525.60.13
+  (Linux) or 527.41 (Windows) and newer (cuDNN 9.10.2 support matrix). PyTorch's CUDA 12.6 index has torch
+  2.11.0 and torchvision 0.26.0 for Linux and Windows, Python 3.11-3.13; the CUDA 12.8 and 13.0 indexes have them
+  for Windows (checked for Python 3.12). A plain `pip install torch==2.11.0` does not replace an installed build
+  (the local version label is ignored), so the README installs the alternative build first. Checked (Kaggle CPU
+  kernel fil-fresh v3, `run_notebook.py --venv --pre-install`): requirements.txt kept `torch 2.11.0+cu126` and
+  `torchvision 0.26.0+cu126` (no CUDA 13 packages left, all 13 pins satisfied), the notebook ran with that build
+  (exit code 0, no error), and both submissions agree with the submitted files on the first two test images at
+  PQ 0.9999. Not checked on an actual older GPU or on Windows.
 * Public-split noise (11-08, `scripts/split_noise.py` on the K1 out-of-fold maps, Kaggle CPU kernel fil-noise;
   `docs/split_noise.json`): per-image PQ counts of the final configurations, pooled PQ over 4,000 random
   90-image subsets of the 707 images. A score on 90 images scatters around the score on all images with

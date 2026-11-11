@@ -11,17 +11,21 @@ without any re-training.
 environment, runs the README's ``pip install -r requirements.txt`` and ``python -m ipykernel install
 --sys-prefix`` in it, then the README's nbconvert command with that environment activated (the installed
 versions go to ``pip_freeze.txt``). The check fails unless the notebook reports the torch build of the new
-environment, i.e. unless its cells really ran with the installed packages.
+environment, i.e. unless its cells really ran with the installed packages. ``--pre-install`` runs one more
+``pip install`` before the requirements, for the README's alternative torch build for older GPUs and drivers.
 
 Usage:
     python scripts/run_notebook.py --profile full --weights "/kaggle/input/**/manifest.json" --out out_full
     python scripts/run_notebook.py --weights "/kaggle/input/**/manifest.json" --venv /tmp/fresh --limit 2 --out out_fresh
+    python scripts/run_notebook.py --weights "/kaggle/input/**/manifest.json" --venv /tmp/fresh --limit 2 --out out_cu126 \
+        --pre-install "torch==2.11.0+cu126 torchvision==0.26.0+cu126 --index-url https://download.pytorch.org/whl/cu126"
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -54,10 +58,11 @@ def versions(python: str = sys.executable) -> dict:
     return json.loads(res.stdout)
 
 
-def make_venv(venv: Path, out: Path) -> tuple[str, dict]:
-    """Follow the README in a new virtual environment: create it, ``pip install -r requirements.txt`` and
-    ``python -m ipykernel install --sys-prefix``. Writes ``pip freeze`` to ``out/pip_freeze.txt`` and returns
-    the environment's python and the environment variables of the activated environment."""
+def make_venv(venv: Path, out: Path, pre_install: list[str] | None = None) -> tuple[str, dict]:
+    """Follow the README in a new virtual environment: create it, ``pip install -r requirements.txt`` (after
+    ``pip install <pre_install>`` if given) and ``python -m ipykernel install --sys-prefix``. Writes ``pip freeze``
+    to ``out/pip_freeze.txt`` and returns the environment's python and the environment variables of the
+    activated environment."""
     if venv.exists():
         shutil.rmtree(venv)
     if subprocess.run([sys.executable, "-m", "venv", str(venv)]).returncode != 0:  # e.g. no ensurepip
@@ -68,6 +73,8 @@ def make_venv(venv: Path, out: Path) -> tuple[str, dict]:
     env = dict(os.environ, VIRTUAL_ENV=str(venv), PATH=str(Path(python).parent) + os.pathsep + os.environ.get("PATH", ""))
     env.pop("JUPYTER_PATH", None)  # a clean machine has none; it would take precedence over the environment's kernel
     t0 = time.time()
+    if pre_install:
+        subprocess.run([python, "-m", "pip", "install", "--progress-bar", "off", *pre_install], env=env, check=True)
     subprocess.run([python, "-m", "pip", "install", "--progress-bar", "off", "-r", str(ROOT / "requirements.txt")],
                    env=env, check=True)
     subprocess.run([python, "-m", "ipykernel", "install", "--sys-prefix"], env=env, check=True)
@@ -91,7 +98,12 @@ def main() -> None:
                     help="NAME=POST_JSON added to the manifest's variants (as scripts/make_weights.py --variant)")
     ap.add_argument("--venv", type=Path, default=None,
                     help="create this virtual environment, install requirements.txt and run the README command in it")
+    ap.add_argument("--pre-install", default=None,
+                    help="with --venv: pip install arguments (one string) run before requirements.txt, e.g. another "
+                         "torch build")
     args = ap.parse_args()
+    if args.pre_install and not args.venv:
+        ap.error("--pre-install needs --venv")
 
     weights = expand([args.weights])[0].parent
     work = args.workdir or Path(f"/tmp/repo_{args.profile}")
@@ -117,7 +129,8 @@ def main() -> None:
     if (ROOT / "docs").exists():
         shutil.copytree(ROOT / "docs", work / "docs")
     args.out.mkdir(parents=True, exist_ok=True)
-    python, base_env = make_venv(args.venv, args.out) if args.venv else (sys.executable, dict(os.environ))
+    python, base_env = (make_venv(args.venv, args.out, shlex.split(args.pre_install) if args.pre_install else None)
+                        if args.venv else (sys.executable, dict(os.environ)))
 
     from filseg.train import find_data_dir
 

@@ -11,7 +11,7 @@ self-contained kernels with `kaggle/build_kernel.py`.
 | script | purpose |
 |---|---|
 | `check_weights.py` | compares every file in `weights/` with the SHA-256 in `weights/manifest.json`, loads and runs all ten networks on the CPU with network access blocked, and applies every post-processing configuration to a synthetic map (about 30 s, no data needed) |
-| `run_notebook.py` | executes `notebooks/pipeline.ipynb` in a fresh copy of the repository; used for the committed notebook and the end-to-end timing in the report; with `--venv`, follows the README steps in a new virtual environment and fails unless the notebook's cells ran with that environment's packages (checks the reproduction instructions) |
+| `run_notebook.py` | executes `notebooks/pipeline.ipynb` in a fresh copy of the repository; used for the committed notebook and the end-to-end timing in the report; with `--venv`, follows the README steps in a new virtual environment and fails unless the notebook's cells ran with that environment's packages (checks the reproduction instructions; `--pre-install` for the alternative torch build) |
 | `check_submission.py` | validates a submission CSV before uploading: header, unique ids, quote-free RLE, image ids of the test set, no empty and no overlapping masks |
 | `compare_submissions.py` | scores one submission file against another, e.g. a re-run of the notebook against the submitted files in `submissions/`, or the notebook re-run against the file built from the training-time maps (PQ 0.998); `--b-images-only` for a partial re-run (`FILSEG_LIMIT_TEST`) |
 

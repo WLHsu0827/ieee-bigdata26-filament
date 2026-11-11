@@ -94,6 +94,25 @@ committed run (PQ 0.9999 between the two). Without the `ipykernel` step, Jupyter
 Python installation of that machine. The check ran without a GPU, which works but is about 95 times slower
 (760 s instead of 8 s per image in a Kaggle CPU session).
 
+On Linux, `requirements.txt` installs PyPI's torch 2.11.0 built for CUDA 13.0 (`2.11.0+cu130`), the build of
+the committed run; it needs NVIDIA driver 580 or newer and a GPU of compute capability 7.5 or higher (Turing or
+newer, e.g. a T4). PyPI's Windows wheel of torch runs on the CPU only. The notebook prints the torch build and
+the device in its first cells. If it reports `device: cpu` on a machine with an NVIDIA GPU (older driver, or
+Windows), or PyTorch reports that the GPU is not supported (e.g. a P100 or V100), install the CUDA 12.6 build of
+the same versions first, in the new environment; `requirements.txt` then keeps it. This build runs on GPUs of
+compute capability 5.0 to 9.0 (Maxwell to Hopper) with driver 525.60.13 or newer on Linux, 527.41 or newer on
+Windows:
+
+```bash
+pip install torch==2.11.0+cu126 torchvision==0.26.0+cu126 --index-url https://download.pytorch.org/whl/cu126
+pip install -r requirements.txt   # "Requirement already satisfied: torch==2.11.0 ... (2.11.0+cu126)"
+```
+
+For a Blackwell GPU on Windows, use the CUDA 13.0 build the same way (`cu130` instead of `cu126` in all three
+places; driver 580 or newer). The CUDA 12.6 sequence was checked with `scripts/run_notebook.py --venv ...
+--pre-install ...` (Linux, without a GPU): the notebook ran with `torch 2.11.0+cu126`, and its submissions for
+the first two test images match the committed run (PQ 0.9999).
+
 The committed notebook run, like all training runs, used one T4 GPU in the Kaggle image
 `gcr.io/kaggle-private-byod/python@sha256:de153e6d303881930c51286216393d56f56b26458d0661350305a1e8144eea01`;
 `kaggle/build_kernel.py` pins this image (and the CPU image of the analysis runs) in the metadata of the
