@@ -15,7 +15,8 @@ IoU exceeds 0.5), computed against every annotator's set of polygons separately.
 1. **Label analysis.** Two experts annotating the same image agree at PQ 0.34,
    and the union / intersection of two annotators predicts a third no better
    (0.33 / 0.31). Annotator style dominates the metric
-   (`scripts/annotator_agreement.py`, `docs/annotator_agreement.json`).
+   ([`scripts/annotator_agreement.py`](scripts/annotator_agreement.py),
+   [`docs/annotator_agreement.json`](docs/annotator_agreement.json)).
 2. **Soft consensus target.** Up to three annotators labelled each image; the
    network learns the per-pixel fraction of annotators that mark a pixel.
 3. **Segmentation network.** U-Net (segmentation-models-pytorch) on the single
@@ -30,30 +31,29 @@ IoU exceeds 0.5), computed against every annotator's set of polygons separately.
    probability map, with hole filling.
 5. **PQ-aware selection.** For disjoint instances PQ decomposes over
    components: keeping a candidate improves PQ iff its expected matched IoU per
-   annotator exceeds PQ / 2 (`filseg/components.py`). The detection shape
+   annotator exceeds PQ / 2 ([`filseg/components.py`](filseg/components.py)). The detection shape
    (threshold, closing, outline level) is chosen by nested cross-validation on
-   out-of-fold predictions (`scripts/select_post.py`), and a small learned
+   out-of-fold predictions ([`scripts/select_post.py`](scripts/select_post.py)), and a small learned
    filter (gradient-boosted trees on per-component features, exported to JSON so
-   inference needs only numpy; `filseg/scorer.py`, `scripts/fit_scorer.py`)
-   decides which candidates to keep. Kept instances are redrawn where the
-   probability exceeds 0.5.
+   inference needs only numpy; [`filseg/scorer.py`](filseg/scorer.py),
+   [`scripts/fit_scorer.py`](scripts/fit_scorer.py)) decides which candidates to keep. Kept instances are
+   redrawn where the probability exceeds 0.5.
 
-Experiments and numbers: `docs/experiments.md`. Report: `docs/report/main.tex`, written in the
-competition's official template (ACM `acmart`; PDF: `python docs/report/build_pdf.py --out build/`, which fills
-the author block, kept as placeholders in the repository, from `--author`, `--institution`, `--city`, `--country`
-and `--email`); a longer
-version with more detail is `docs/report_extended.md`. Figures: `docs/figures/` (pipeline, out-of-fold
-evaluation, morphology examples).
+Experiments and numbers: [`docs/experiments.md`](docs/experiments.md). Report:
+[`docs/report/main.tex`](docs/report/main.tex), written in the competition's official template (ACM `acmart`;
+PDF: `python docs/report/build_pdf.py --out build/`, which fills the author block, kept as placeholders in the
+repository, from `--author`, `--institution`, `--city`, `--country` and `--email`); a longer version with more
+detail is [`docs/report_extended.md`](docs/report_extended.md). Figures: [`docs/figures/`](docs/figures)
+(pipeline, out-of-fold evaluation, morphology examples).
 
 ## Reproducing the submission
 
-`notebooks/pipeline.ipynb` (committed with the outputs of a run on a Kaggle T4 GPU) runs the whole
-inference pipeline from the weights
-in `weights/` (no training needed): it predicts every test image and writes both final submissions
-from the same probability maps, `submission.csv` (learned component filter) and `submission_rule.csv`
-(three-parameter rule). It also shows predictions and, if the training annotations are
-available, recomputes the hold-out PQ, IoU / Dice distributions and
-one-to-many / many-to-one statistics.
+[`notebooks/pipeline.ipynb`](notebooks/pipeline.ipynb) (committed with the outputs of a run on a Kaggle T4 GPU)
+runs the whole inference pipeline from the weights in [`weights/`](weights) (no training needed): it predicts
+every test image and writes both final submissions from the same probability maps, `submission.csv` (learned
+component filter) and `submission_rule.csv` (three-parameter rule). It also shows predictions and, if the
+training annotations are available, recomputes the hold-out PQ, IoU / Dice distributions and one-to-many /
+many-to-one statistics.
 
 ```bash
 git clone --depth 1 <repository URL>   # ~0.5 GB, mostly the ten weight files (43-47 MB each)
@@ -67,7 +67,7 @@ The notebook needs only the competition's test images. It looks for the unzipped
 then under `/kaggle/input` (competition data attached to a Kaggle notebook). It writes `submission.csv` and
 `submission_rule.csv` to the repository root.
 
-`submissions/` holds the two files submitted to Kaggle, byte for byte (downloaded back from Kaggle):
+[`submissions/`](submissions) holds the two files submitted to Kaggle, byte for byte (downloaded back from Kaggle):
 `submission.csv` (final submission B, Kaggle ref 58107878, public score 0.38; SHA-256
 `18d75e35cb3d42df61b863a5636c3c54b099effa25ad7e7748940fee186f455c`) and `submission_rule.csv` (final submission A,
 ref 58109804, public score 0.39; `a6e10ecfe416aec6c76fe8a58f1b59a71b56b6117780d4ffc3bda654461f36bf`). The committed
@@ -83,7 +83,7 @@ Without a GPU, `FILSEG_LIMIT_TEST=2` makes the notebook predict only the first t
 a Kaggle CPU session); add `--b-images-only` to compare only those images (this check gave PQ 0.9999 for both
 files).
 
-Every pinned version in `requirements.txt` has binary wheels for Python 3.11, 3.12 and 3.13 (checked on
+Every pinned version in [`requirements.txt`](requirements.txt) has binary wheels for Python 3.11, 3.12 and 3.13 (checked on
 PyPI for Linux x86_64, and for Windows with 3.12); Python 3.10 lacks `scipy==1.16.3` and Python 3.14 lacks
 wheels for `numpy==2.1.3` and three other pins.
 
@@ -115,17 +115,17 @@ the first two test images match the committed run (PQ 0.9999).
 
 The committed notebook run, like all training runs, used one T4 GPU in the Kaggle image
 `gcr.io/kaggle-private-byod/python@sha256:de153e6d303881930c51286216393d56f56b26458d0661350305a1e8144eea01`;
-`kaggle/build_kernel.py` pins this image (and the CPU image of the analysis runs) in the metadata of the
-kernels it builds, so that a re-run on Kaggle uses the same environment.
+[`kaggle/build_kernel.py`](kaggle/build_kernel.py) pins this image (and the CPU image of the analysis runs) in
+the metadata of the kernels it builds, so that a re-run on Kaggle uses the same environment.
 
 Apart from `pip install`, nothing is downloaded: the networks are built without pretrained
 weights and loaded from `weights/`. `python scripts/check_weights.py` checks this on a CPU
 without the competition data (about half a minute): it compares every weight file with the
-SHA-256 in `weights/manifest.json`, loads and runs all ten networks with network access
+SHA-256 in [`weights/manifest.json`](weights/manifest.json), loads and runs all ten networks with network access
 blocked, and applies every post-processing configuration to a synthetic probability map.
 
 Two profiles (variable `PROFILE` in the notebook, or `FILSEG_PROFILE`), measured
-end to end on one T4 GPU for the 180 test images (`scripts/run_notebook.py`):
+end to end on one T4 GPU for the 180 test images ([`scripts/run_notebook.py`](scripts/run_notebook.py)):
 
 | profile | networks | out-of-fold PQ (nested CV)* | time per image |
 |---|---|---|---|
@@ -164,27 +164,27 @@ python scripts/run_notebook.py --profile full --weights weights/manifest.json --
 
 | path | content |
 |------|---------|
-| `filseg/data.py` | COCO annotation parsing, polygon rasterisation, soft targets, folds |
-| `filseg/rle.py`, `filseg/submission.py` | COCO RLE and validated submission writing |
-| `filseg/metrics.py` | Panoptic Quality identical to the organisers' self-evaluation notebook |
-| `filseg/augment.py` | crop-first geometric and photometric augmentation |
-| `filseg/model.py` | network, normalisation, fp16 checkpoints, flip / rotation TTA prediction |
-| `filseg/train.py`, `filseg/cv.py` | training (EMA, OOM fallback, time budget), CV driver |
-| `filseg/postprocess.py`, `filseg/tune.py` | probability map -> instances; post-processing scoring |
-| `filseg/components.py` | per-component PQ decomposition, nested rule selection, nested CV of the learned filter |
-| `filseg/scorer.py` | learned component filter: gradient-boosted trees exported to JSON, numpy inference |
-| `filseg/analysis.py` | error analysis (by size with bootstrap intervals over images, aggregation, matching degrees, error causes with PQ upper bounds) |
-| `filseg/infer.py` | inference / ensembling from saved weights |
-| `filseg/classical.py` | traditional (non-learning) darkness-threshold baseline |
-| `scripts/` | command-line tools for reproduction, model building, the analyses behind the report and the experiments that were not adopted; index in [`scripts/README.md`](scripts/README.md) |
-| `configs/` | post-processing configurations: `post_final_rule.json` (final submission A), `post_final_full.json` (final submission B, notebook default), `post_final_fast.json` (fast profile) |
-| `notebooks/` | `pipeline.ipynb` (executed) and its generator |
-| `weights/` | the ten fp16 networks (one per encoder and fold) and `manifest.json` (files, SHA-256, training arguments, post-processing of both profiles) |
-| `submissions/` | the two files submitted to Kaggle, byte for byte, to check a re-run of the notebook with `scripts/compare_submissions.py` |
-| `docs/` | experiment log, report, figures, evaluation numbers, paired comparisons of the pilot experiments (`gate/`, `gate3/`), list of the external images |
-| `kaggle/` | builders for self-contained Kaggle kernels and Colab notebooks |
-| `tests/` | unit tests (`python -m pytest tests`) |
-| `ruff.toml` | lint rules (`ruff check .`) |
+| [`filseg/data.py`](filseg/data.py) | COCO annotation parsing, polygon rasterisation, soft targets, folds |
+| [`filseg/rle.py`](filseg/rle.py), [`filseg/submission.py`](filseg/submission.py) | COCO RLE and validated submission writing |
+| [`filseg/metrics.py`](filseg/metrics.py) | Panoptic Quality identical to the organisers' self-evaluation notebook |
+| [`filseg/augment.py`](filseg/augment.py) | crop-first geometric and photometric augmentation |
+| [`filseg/model.py`](filseg/model.py) | network, normalisation, fp16 checkpoints, flip / rotation TTA prediction |
+| [`filseg/train.py`](filseg/train.py), [`filseg/cv.py`](filseg/cv.py) | training (EMA, OOM fallback, time budget), CV driver |
+| [`filseg/postprocess.py`](filseg/postprocess.py), [`filseg/tune.py`](filseg/tune.py) | probability map -> instances; post-processing scoring |
+| [`filseg/components.py`](filseg/components.py) | per-component PQ decomposition, nested rule selection, nested CV of the learned filter |
+| [`filseg/scorer.py`](filseg/scorer.py) | learned component filter: gradient-boosted trees exported to JSON, numpy inference |
+| [`filseg/analysis.py`](filseg/analysis.py) | error analysis (by size with bootstrap intervals over images, aggregation, matching degrees, error causes with PQ upper bounds) |
+| [`filseg/infer.py`](filseg/infer.py) | inference / ensembling from saved weights |
+| [`filseg/classical.py`](filseg/classical.py) | traditional (non-learning) darkness-threshold baseline |
+| [`scripts/`](scripts) | command-line tools for reproduction, model building, the analyses behind the report and the experiments that were not adopted; index in [`scripts/README.md`](scripts/README.md) |
+| [`configs/`](configs) | post-processing configurations: [`post_final_rule.json`](configs/post_final_rule.json) (final submission A), [`post_final_full.json`](configs/post_final_full.json) (final submission B, notebook default), [`post_final_fast.json`](configs/post_final_fast.json) (fast profile) |
+| [`notebooks/`](notebooks) | [`pipeline.ipynb`](notebooks/pipeline.ipynb) (executed) and its generator [`build_pipeline_notebook.py`](notebooks/build_pipeline_notebook.py) |
+| [`weights/`](weights) | the ten fp16 networks (one per encoder and fold) and [`manifest.json`](weights/manifest.json) (files, SHA-256, training arguments, post-processing of both profiles) |
+| [`submissions/`](submissions) | the two files submitted to Kaggle, byte for byte, to check a re-run of the notebook with [`scripts/compare_submissions.py`](scripts/compare_submissions.py) |
+| [`docs/`](docs) | experiment log, report, figures, evaluation numbers, paired comparisons of the pilot experiments ([`gate/`](docs/gate), [`gate3/`](docs/gate3)), list of the external images |
+| [`kaggle/`](kaggle) | builders for self-contained Kaggle kernels and Colab notebooks |
+| [`tests/`](tests) | unit tests (`python -m pytest tests`) |
+| [`ruff.toml`](ruff.toml) | lint rules (`ruff check .`) |
 
 ## Data and licence
 
@@ -192,8 +192,11 @@ The MAGFiLO images and annotations are provided by the competition organisers
 (GONG data courtesy of NSO/AURA/NSF) and are **not** redistributed here.
 Training uses only the competition's training annotations; inference uses only
 the test H-alpha images. The semi-supervised experiment (tested, **not used** by the final models; see
-`docs/experiments.md`) additionally used *unlabelled* GONG H-alpha images from the public NSO archive, taken on days at least
-two days away from every competition image (`scripts/fetch_gong.py`; images are fetched,
-not redistributed). `docs/external_gong_manifest.csv` lists every image (URL, date, SHA-256 of the
-original and of the processed file); `scripts/check_external.py` re-checks the date gap against all
-train and test images and that the processing reproduces each file byte for byte. Code is released under the MIT licence.
+[`docs/experiments.md`](docs/experiments.md)) additionally used *unlabelled* GONG H-alpha images from the public
+NSO archive, taken on days at least two days away from every competition image
+([`scripts/fetch_gong.py`](scripts/fetch_gong.py); images are fetched, not redistributed).
+[`docs/external_gong_manifest.csv`](docs/external_gong_manifest.csv) lists every image (URL, date, SHA-256 of the
+original and of the processed file); [`scripts/check_external.py`](scripts/check_external.py) re-checks the date
+gap against all train and test images and that the processing reproduces each file byte for byte.
+
+The code is released under the [MIT licence](LICENSE).
