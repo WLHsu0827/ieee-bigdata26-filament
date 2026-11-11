@@ -80,8 +80,8 @@ sys.exit(max(rcs))
 
 def payload(kind: str = "full") -> str:
     """Base64 zip of the sources. ``full``: package, scripts, configs, notebook generator, evaluation
-    files and small figures; ``report``: only the report sources and the figures ``main.tex`` uses
-    (Kaggle rejects kernel scripts above roughly 1 MB)."""
+    files, small figures and ``requirements.txt``; ``report``: only the report sources and the figures
+    ``main.tex`` uses (Kaggle rejects kernel scripts above roughly 1 MB)."""
     import re
 
     report = ROOT / "docs" / "report"
@@ -94,7 +94,8 @@ def payload(kind: str = "full") -> str:
                  + sorted((ROOT / "configs").glob("*.json")) + sorted((ROOT / "notebooks").glob("*.py"))
                  + sorted((ROOT / "docs").glob("*.json"))
                  + [ROOT / "docs" / "figures" / n for n in ("pipeline.png", "evaluation.png")
-                    if (ROOT / "docs" / "figures" / n).exists()])  # the figures the notebook displays
+                    if (ROOT / "docs" / "figures" / n).exists()]  # the figures the notebook displays
+                 + [ROOT / "requirements.txt"])  # for scripts/run_notebook.py --venv
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in files:

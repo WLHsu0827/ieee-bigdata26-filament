@@ -164,6 +164,18 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   the verification kernels had internet enabled, so this was not covered before), and the three post-processing
   configurations each keep 3 of 4 synthetic ridges; 25 s on two CPU cores. The notebook's code cells make no
   network calls.
+* Fresh-install check (11-11, Kaggle CPU kernel fil-fresh, `scripts/run_notebook.py --venv /tmp/fresh --limit 2`):
+  the README steps in a new virtual environment (Python 3.13.18; `venv` lacks `ensurepip` in the Kaggle image, so
+  `virtualenv` is used). `pip install -r requirements.txt` installs all 13 pins at the pinned version (3.4-4.8 min;
+  `pip freeze` in the kernel output). First attempt, without a kernel step: nbconvert succeeded, but the notebook
+  reported `torch 2.11.0+cpu`, the Kaggle image's own build; Jupyter had started the `python3` kernel of the base
+  installation, so the cells did not use the new environment. The README therefore registers the environment's
+  kernel (`python -m ipykernel install --sys-prefix`), and the check fails unless the notebook reports the new
+  environment's torch build. Second attempt: kernel `/tmp/fresh/bin/python`, notebook `torch 2.11.0+cu130 |
+  device: cpu`, 16 cells, no error (one harmless stderr warning: tqdm finds no ipywidgets), exit code 0. On the
+  first two test images both submissions agree with the committed run (fil-nb-verify v3, T4 GPU) at PQ 0.9999
+  (every instance matched at IoU > 0.99; fp32 on the CPU vs mixed precision on the GPU). Without a GPU the full
+  profile needs 760 s per image (8 s on a T4).
 * Public-split noise (11-08, `scripts/split_noise.py` on the K1 out-of-fold maps, Kaggle CPU kernel fil-noise;
   `docs/split_noise.json`): per-image PQ counts of the final configurations, pooled PQ over 4,000 random
   90-image subsets of the 707 images. A score on 90 images scatters around the score on all images with

@@ -57,7 +57,8 @@ one-to-many / many-to-one statistics.
 
 ```bash
 git clone --depth 1 <repository URL>   # ~0.5 GB, mostly the ten weight files (43-47 MB each)
-pip install -r requirements.txt        # Python 3.11-3.13 (the committed run used 3.13)
+pip install -r requirements.txt        # in a new environment; Python 3.11-3.13 (the committed run used 3.13)
+python -m ipykernel install --sys-prefix   # makes this environment the notebook's "python3" kernel
 jupyter nbconvert --to notebook --execute notebooks/pipeline.ipynb   # or open and Run All
 ```
 
@@ -69,6 +70,13 @@ then under `/kaggle/input` (competition data attached to a Kaggle notebook). It 
 Every pinned version in `requirements.txt` has binary wheels for Python 3.11, 3.12 and 3.13 (checked on
 PyPI for Linux x86_64, and for Windows with 3.12); Python 3.10 lacks `scipy==1.16.3` and Python 3.14 lacks
 wheels for `numpy==2.1.3` and three other pins.
+
+These steps were checked as written (`python scripts/run_notebook.py --venv ...`): in a new virtual environment
+(Python 3.13, Linux) that received only the packages of `requirements.txt` (3-5 min to install), the notebook ran
+without errors with that environment's packages, and its submissions for the first two test images match the
+committed run (PQ 0.9999 between the two). Without the `ipykernel` step, Jupyter ran the notebook with another
+Python installation of that machine. The check ran without a GPU, which works but is about 95 times slower
+(760 s instead of 8 s per image in a Kaggle CPU session).
 
 The committed notebook run, like all training runs, used one T4 GPU in the Kaggle image
 `gcr.io/kaggle-private-byod/python@sha256:de153e6d303881930c51286216393d56f56b26458d0661350305a1e8144eea01`;
