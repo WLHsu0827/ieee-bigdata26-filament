@@ -1,6 +1,8 @@
 """Segmentation network and tiled / test-time-augmented prediction."""
 from __future__ import annotations
 
+import warnings
+
 import cv2
 import numpy as np
 import torch
@@ -106,19 +108,37 @@ def predict_images(models: list[torch.nn.Module], images: list[np.ndarray], res:
                    amp: bool = True, norm: str = "global") -> np.ndarray:
     """uint8 (2048, 2048) images -> float16 probabilities at ``res`` (N, res, res).
 
-    Probabilities of several models (same resolution and normalisation) are averaged.
+    Probabilities of several models (same resolution and normalisation) are averaged. Activation memory
+    grows with the number of images per pass: if a pass over ``batch`` images runs out of memory, it is
+    repeated with half as many (down to one), and the remaining images keep the smaller batch.
     """
     out = np.zeros((len(images), res, res), np.float16)
     use_amp = amp and device.type == "cuda"
-    for s in range(0, len(images), batch):
+    s = 0
+    while s < len(images):
         xb = torch.stack([to_tensor(resize_image(im, res).astype(np.float32) / 255.0, image_stats(im, norm))
                           for im in images[s:s + batch]]).to(device)
         acc = None
-        with torch.autocast(device_type=device.type, enabled=use_amp):
-            for m in models:
-                p = predict_batch(m, xb, tta)
-                acc = p if acc is None else acc + p
+        try:
+            with torch.autocast(device_type=device.type, enabled=use_amp):
+                for m in models:
+                    p = predict_batch(m, xb, tta)
+                    acc = p if acc is None else acc + p
+        except torch.cuda.OutOfMemoryError:
+            if len(xb) == 1:
+                raise
+            out_of_memory = True
+        else:
+            out_of_memory = False
+        if out_of_memory:  # outside the handler, so that the traceback no longer holds the partial results
+            batch = len(xb) // 2
+            xb = acc = p = None
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+            warnings.warn(f"out of memory: repeating the pass with {batch} image(s) at a time", RuntimeWarning)
+            continue
         out[s:s + len(xb)] = (acc / len(models))[:, 0].cpu().numpy().astype(np.float16)
+        s += len(xb)
     return out
 
 

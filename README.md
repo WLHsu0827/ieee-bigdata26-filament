@@ -141,6 +141,16 @@ end to end on one T4 GPU for the 180 test images ([`scripts/run_notebook.py`](sc
 \* Both encoders use the same five folds, so a training image's out-of-fold map averages only the
 networks that did not see it (two for `full`, one for `fast`); the submission averages all of them.
 
+GPU memory: the ten networks take 0.87 GiB on the GPU, and each forward pass runs one network on four test
+images in half precision. Its activations need about 3 GiB: measured on the CPU in single precision, the peak
+is 382 MiB per 1024 x 1024 pixels for the ResNet34 U-Net and 332 MiB for the EfficientNetV2-S U-Net
+(proportional to the number of pixels), i.e. 6.0 and 5.2 GiB for four 2048 px images, halved in half precision;
+a pass that is repeated in single precision after a half-precision overflow needs the full amount. The
+committed run used a 16 GB T4. On a GPU with less memory, a pass that runs out of memory is repeated with two
+images, then one (`filseg.model.predict_images`), which needs half or a quarter of the activation memory. This
+can change the probabilities slightly: by floating-point rounding, and because a pass that is repeated in single
+precision then covers fewer images.
+
 ## Training from scratch
 
 ```bash
@@ -174,7 +184,7 @@ python scripts/run_notebook.py --profile full --weights weights/manifest.json --
 | [`filseg/rle.py`](filseg/rle.py), [`filseg/submission.py`](filseg/submission.py) | COCO RLE and validated submission writing |
 | [`filseg/metrics.py`](filseg/metrics.py) | Panoptic Quality identical to the organisers' self-evaluation notebook |
 | [`filseg/augment.py`](filseg/augment.py) | crop-first geometric and photometric augmentation |
-| [`filseg/model.py`](filseg/model.py) | network, normalisation, fp16 checkpoints, flip / rotation TTA prediction |
+| [`filseg/model.py`](filseg/model.py) | network, normalisation, fp16 checkpoints, flip / rotation TTA prediction (fewer images per pass when out of memory) |
 | [`filseg/train.py`](filseg/train.py), [`filseg/cv.py`](filseg/cv.py) | training (EMA, OOM fallback, time budget), CV driver |
 | [`filseg/postprocess.py`](filseg/postprocess.py), [`filseg/tune.py`](filseg/tune.py) | probability map -> instances; post-processing scoring |
 | [`filseg/components.py`](filseg/components.py) | per-component PQ decomposition, nested rule selection, nested CV of the learned filter |

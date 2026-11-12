@@ -221,6 +221,22 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   with that OpenCV and with the pinned `opencv-python-headless==4.14.0.94` and `numpy==2.1.3` (also
   libjpeg-turbo 3.1.2): originals unchanged and processing reproduced byte for byte; a manifest with one altered
   hash of either kind fails. Not checked on Linux; the full check (about 1,200 downloads) was not repeated.
+* GPU memory of inference (11-13). The notebook keeps all ten networks on the GPU (233.5 M parameters, 0.87 GiB in
+  fp32) and runs one network on four 2048 px test images per forward pass (`batch=4`). No GPU memory was recorded
+  in the T4 runs. Activation peak of one forward pass, measured on the CPU in fp32 with the PyTorch profiler
+  (allocations attributed to operators plus frees between operators, summed in time order; balanced to zero at
+  the end): 382.0 MiB per 1024 x 1024 pixels for the ResNet34 U-Net and 331.5 MiB for the EfficientNetV2-S U-Net,
+  the same at a quarter of that size and for 4 x 512 px vs 1 x 1024 px, so strictly proportional to the pixel
+  count. Four 2048 px images: 6.0 and 5.2 GiB in fp32, about half under autocast; a pass repeated in fp32 after a
+  half-precision overflow needs the fp32 amount. CUDA context, cuDNN workspace and allocator caching come on top
+  and were not measured. `predict_images` now repeats a pass that raises `torch.cuda.OutOfMemoryError` with half
+  as many images (down to one) and keeps the smaller batch for the remaining images (as training does for its
+  first epoch). Without that error the output is byte-identical to the previous code (checked for 1, 2, 4 and 8
+  images per pass, both normalisations, two random ResNet18 U-Nets on seven 96 px images); after it, the
+  probabilities can differ slightly (rounding of other kernels for the smaller batch; the fp32 repeat of
+  `predict_batch` then covers fewer images). Test
+  `test_predict_images_repeats_a_pass_with_fewer_images_when_out_of_memory` simulates the error. Not tested on a
+  GPU with less memory.
 * Public-split noise (11-08, `scripts/split_noise.py` on the K1 out-of-fold maps, Kaggle CPU kernel fil-noise;
   `docs/split_noise.json`): per-image PQ counts of the final configurations, pooled PQ over 4,000 random
   90-image subsets of the 707 images. A score on 90 images scatters around the score on all images with

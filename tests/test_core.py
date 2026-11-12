@@ -588,6 +588,37 @@ def test_predict_batch_recomputes_non_finite_passes_in_fp32():
     assert torch.isfinite(p).all() and torch.allclose(p, torch.full_like(p, 0.5))
 
 
+def test_predict_images_repeats_a_pass_with_fewer_images_when_out_of_memory():
+    """A pass that runs out of memory is repeated with half as many images (down to one) and gives the same
+    probabilities as an unconstrained run; with one image per pass the error is raised."""
+    import torch
+
+    from filseg.model import predict_images
+
+    class LimitedMemory(torch.nn.Module):
+        def __init__(self, max_images):
+            super().__init__()
+            self.max_images, self.calls = max_images, []
+
+        def forward(self, x):
+            self.calls.append(len(x))
+            if len(x) > self.max_images:
+                raise torch.cuda.OutOfMemoryError("CUDA out of memory (simulated)")
+            return x * 2.0 - 1.0
+
+    rng = np.random.default_rng(0)
+    images = [rng.integers(0, 256, (64, 64), dtype=np.uint8) for _ in range(5)]
+    dev = torch.device("cpu")
+    ref = predict_images([LimitedMemory(8)], images, 32, dev, tta=2, batch=4)
+    small = LimitedMemory(1)
+    with pytest.warns(RuntimeWarning, match="out of memory"):
+        got = predict_images([small], images, 32, dev, tta=2, batch=4)
+    assert np.array_equal(got, ref)
+    assert small.calls == [4, 2] + [1] * 2 * len(images)  # 4 and 2 images fail; then one at a time, 2 TTA passes each
+    with pytest.raises(torch.cuda.OutOfMemoryError), pytest.warns(RuntimeWarning):
+        predict_images([LimitedMemory(0)], images, 32, dev, tta=2, batch=4)
+
+
 def test_predict_oof_tta8_equals_dihedral_tta():
     import sys
     from pathlib import Path
