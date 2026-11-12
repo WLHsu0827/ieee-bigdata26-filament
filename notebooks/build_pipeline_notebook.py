@@ -39,8 +39,8 @@ image, and writes `submission.csv` in the competition format.
 | 5. encoding | instances | COCO RLE rows of `submission.csv` | `filseg.submission` |
 """),
     ("markdown", "## 1. Setup\n\nSet `DATA_DIR` to the unzipped competition data (`MAGFiLO_1.0_Kaggle_2026`; found "
-                 "automatically next to the repository or under `/kaggle/input`). Install the pinned packages with "
-                 "`pip install -r requirements.txt` if needed.\n\n"
+                 "automatically inside or next to the repository, at `$FILSEG_DATA` or under `/kaggle/input`). "
+                 "Install the pinned packages with `pip install -r requirements.txt` if needed.\n\n"
                  "`PROFILE = \"full\"` reproduces the submission with all ten networks; `\"fast\"` uses the five "
                  "EfficientNetV2-S networks with their own post-processing (about half the inference time, "
                  "slightly lower out-of-fold PQ; see the table in section 2)."),

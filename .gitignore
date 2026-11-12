@@ -3,6 +3,7 @@ __pycache__/
 .ipynb_checkpoints/
 # data and run artefacts are kept outside the repository
 data/
+/MAGFiLO_1.0_Kaggle_2026/
 runs/
 *.zip
 *.npz

@@ -56,16 +56,21 @@ training annotations are available, recomputes the hold-out PQ, IoU / Dice distr
 many-to-one statistics.
 
 ```bash
-git clone --depth 1 <repository URL>   # ~0.5 GB, mostly the ten weight files (43-47 MB each)
+git clone --depth 1 https://github.com/WLHsu0827/ieee-bigdata26-filament   # ~0.5 GB, mostly the ten weight files (43-47 MB each)
+cd ieee-bigdata26-filament
 pip install -r requirements.txt        # in a new environment; Python 3.11-3.13 (the committed run used 3.13)
 python -m ipykernel install --sys-prefix   # makes this environment the notebook's "python3" kernel
+python -m zipfile -e filament-segmentation-2026.zip .   # competition data (see below) -> MAGFiLO_1.0_Kaggle_2026/
 jupyter nbconvert --to notebook --execute notebooks/pipeline.ipynb   # or open and Run All
 ```
 
-The notebook needs only the competition's test images. It looks for the unzipped competition data as
-`MAGFiLO_1.0_Kaggle_2026/` inside or next to the repository, then in the folder named by `$FILSEG_DATA`,
-then under `/kaggle/input` (competition data attached to a Kaggle notebook). It writes `submission.csv` and
-`submission_rule.csv` to the repository root.
+The competition data (716 MiB) comes from the competition's Data page or from `kaggle competitions download -c
+filament-segmentation-2026` (Kaggle CLI: `pip install kaggle`, an API token and the accepted competition rules),
+which saves `filament-segmentation-2026.zip`; put the archive in the repository folder before the `zipfile` line.
+It holds one folder, `MAGFiLO_1.0_Kaggle_2026/` (707 training images with their annotations and 180 test images);
+the notebook needs only the test images. It looks for this folder inside or next to the repository, then in the
+folder named by `$FILSEG_DATA`, then under `/kaggle/input` (competition data attached to a Kaggle notebook; no
+download needed there). It writes `submission.csv` and `submission_rule.csv` to the repository root.
 
 [`submissions/`](submissions) holds the two files submitted to Kaggle, byte for byte (downloaded back from Kaggle):
 `submission.csv` (final submission B, Kaggle ref 58107878, public score 0.38; SHA-256
@@ -87,7 +92,8 @@ Every pinned version in [`requirements.txt`](requirements.txt) has binary wheels
 PyPI for Linux x86_64, and for Windows with 3.12); Python 3.10 lacks `scipy==1.16.3` and Python 3.14 lacks
 wheels for `numpy==2.1.3` and three other pins.
 
-These steps were checked as written (`python scripts/run_notebook.py --venv ...`): in a new virtual environment
+These steps were checked as written (`python scripts/run_notebook.py --venv ...`, with the competition data
+attached to the Kaggle session instead of the archive): in a new virtual environment
 (Python 3.13, Linux) that received only the packages of `requirements.txt` (3-5 min to install), the notebook ran
 without errors with that environment's packages, and its submissions for the first two test images match the
 committed run (PQ 0.9999 between the two). Without the `ipykernel` step, Jupyter ran the notebook with another
