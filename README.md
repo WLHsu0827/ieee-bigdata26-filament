@@ -189,8 +189,8 @@ python scripts/run_notebook.py --profile full --weights weights/manifest.json --
 | [`submissions/`](submissions) | the two files submitted to Kaggle, byte for byte, to check a re-run of the notebook with [`scripts/compare_submissions.py`](scripts/compare_submissions.py) |
 | [`docs/`](docs) | experiment log, report, figures, evaluation numbers, paired comparisons of the pilot experiments ([`gate/`](docs/gate), [`gate3/`](docs/gate3)), list of the external images |
 | [`kaggle/`](kaggle) | builders for self-contained Kaggle kernels and Colab notebooks |
-| [`tests/`](tests) | unit tests (`python -m pytest tests`) |
-| [`ruff.toml`](ruff.toml) | lint rules (`ruff check .`) |
+| [`tests/`](tests) | unit tests on synthetic data and the committed files (no competition data needed; about a minute on a CPU): `pip install pytest==9.2.0`, then `python -m pytest tests` from the repository root |
+| [`ruff.toml`](ruff.toml) | lint rules: `pip install ruff==0.17.3`, then `ruff check .` |
 
 ## Data and licence
 

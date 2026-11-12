@@ -738,3 +738,35 @@ def test_compare_submissions_scores_a_partial_rerun_on_its_images():
     part = compare.agreement(a, b, b_images_only=True)
     assert (part["images"], part["n_a"], part["tp"], part["fn"]) == (1, 2, 2, 0)
     assert part["pq"] == pytest.approx(1.0) and part["matched"][0.99] == 1.0
+
+
+def test_scripts_find_the_package_without_pythonpath(tmp_path):
+    """``python scripts/<name>.py`` in a fresh clone runs without ``PYTHONPATH``: every script must put the
+    repository root on ``sys.path`` itself before it imports ``filseg``. Loads each script's module level
+    (imports only; ``__main__`` is not run) in a clean interpreter, as ``python <script>`` would."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    probe = r"""
+import runpy, sys
+from pathlib import Path
+base = [p for p in sys.path if p not in ("", ".")]
+failed = []
+for script in sys.argv[1:]:
+    for name in [m for m in sys.modules if m.split(".")[0] in ("filseg", "cli_utils", "scripts")]:
+        del sys.modules[name]
+    sys.path[:] = [str(Path(script).parent)] + base
+    try:
+        runpy.run_path(script, run_name="imported")
+    except ImportError as e:
+        failed.append(f"{Path(script).name}: {e}")
+print("\n".join(failed))
+sys.exit(1 if failed else 0)
+"""
+    root = Path(__file__).resolve().parents[1]
+    scripts = sorted(str(p) for p in (root / "scripts").glob("*.py"))
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    r = subprocess.run([sys.executable, "-c", probe, *scripts], cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr

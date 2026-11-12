@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import argparse
 import pickle
+import sys
 from pathlib import Path
 
-from filseg import data, rle
-from filseg.metrics import Crop
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from filseg import data, rle  # noqa: E402
+from filseg.metrics import Crop  # noqa: E402
 
 
 def main() -> None:

@@ -202,6 +202,15 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   `torchvision 0.26.0+cu126` (no CUDA 13 packages left, all 13 pins satisfied), the notebook ran with that build
   (exit code 0, no error), and both submissions agree with the submitted files on the first two test images at
   PQ 0.9999. Not checked on an actual older GPU or on Windows.
+* Entry points in a plain shell (11-12). All earlier local and Kaggle runs set `PYTHONPATH` to the repository
+  (local runner script, Kaggle kernel template), which hides a script that does not put the repository root on
+  `sys.path` itself. Run as a reader would, from the repository root without `PYTHONPATH`: `--help` of the 24
+  command-line tools with an argument parser (21 in `scripts/`, `build_pdf.py`, `build_kernel.py`,
+  `build_colab.py`) and of `python -m filseg.train` / `filseg.cv`, then `python scripts/check_weights.py` (all
+  checks passed) and `python -m pytest tests` (41 passed). One failure: `scripts/build_gt_cache.py` (`No module
+  named 'filseg'`), fixed; `test_scripts_find_the_package_without_pythonpath` now loads every script this way
+  (it fails on the unfixed file). pytest and ruff are not in `requirements.txt` (not needed to reproduce the
+  predictions); the README gives their versions.
 * Public-split noise (11-08, `scripts/split_noise.py` on the K1 out-of-fold maps, Kaggle CPU kernel fil-noise;
   `docs/split_noise.json`): per-image PQ counts of the final configurations, pooled PQ over 4,000 random
   90-image subsets of the 707 images. A score on 90 images scatters around the score on all images with
