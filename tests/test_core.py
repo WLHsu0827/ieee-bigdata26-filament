@@ -770,3 +770,39 @@ sys.exit(1 if failed else 0)
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
     r = subprocess.run([sys.executable, "-c", probe, *scripts], cwd=tmp_path, env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_check_external_verifies_the_recorded_hashes(tmp_path, monkeypatch):
+    """``scripts/check_external.py --originals`` checks every re-downloaded original against the SHA-256 in the
+    manifest and that re-processing it reproduces the recorded processed file (no copy of the processed
+    images needed); a mismatch in either hash fails."""
+    import csv
+    import datetime as dt
+    import hashlib
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    import cv2
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("check_external", root / "scripts" / "check_external.py")
+    check_external = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(check_external)
+    raw = cv2.imencode(".jpeg", np.add.outer(np.arange(64), np.arange(64)).astype(np.uint8))[1].tobytes()
+    monkeypatch.setattr(check_external, "get", lambda url: raw)  # no network
+    monkeypatch.setattr(check_external, "find_data_dir", lambda hint: tmp_path)
+    monkeypatch.setattr(check_external, "competition_days", lambda data_dir: {dt.date(2020, 1, 1)})
+    manifest = tmp_path / "manifest.csv"
+    monkeypatch.setattr(sys, "argv", ["check_external.py", "--manifest", str(manifest), "--originals"])
+    good_orig = hashlib.sha256(raw).hexdigest()
+    good_proc = hashlib.sha256(check_external.process(raw)).hexdigest()
+    for sha_orig, sha_proc, code in ((good_orig, good_proc, 0), (good_orig, "0" * 64, 1), ("0" * 64, good_proc, 1)):
+        with open(manifest, "w", newline="") as f:
+            w = csv.DictWriter(f, ["name", "url", "sha256_original", "sha256_processed"])
+            w.writeheader()
+            w.writerow({"name": "20210101000000Th", "url": "https://example.org/x.jpg",
+                        "sha256_original": sha_orig, "sha256_processed": sha_proc})
+        with pytest.raises(SystemExit) as exit_info:
+            check_external.main()
+        assert exit_info.value.code == code

@@ -49,7 +49,7 @@ These produced the negative results of the report; the final pipeline does not u
 | script | purpose |
 |---|---|
 | [`fetch_gong.py`](fetch_gong.py) | semi-supervised experiment: fetches unlabelled GONG H-alpha archive images taken at least two days away from every competition image |
-| [`check_external.py`](check_external.py) | re-checks that date gap against all train and test images and that the processing reproduces every external file byte for byte (`docs/external_gong_manifest.csv`) |
+| [`check_external.py`](check_external.py) | re-checks that date gap against all train and test images; with `--originals`, downloads every original again and checks the SHA-256 of the original and of its re-processed version against `docs/external_gong_manifest.csv` (byte-exact processing; no copy of the processed images needed) |
 | [`pseudo_label.py`](pseudo_label.py) | teacher probability maps of the unlabelled images |
 | [`predict_oof.py`](predict_oof.py) | re-predicts all out-of-fold maps from the committed weights with test-time augmentation x4 and x8 in one pass (the TTA trade-off) |
 | [`extent_levels.py`](extent_levels.py) | candidate tables with several outline levels and extra evidence; nested CV of a per-candidate outline and of extra filter features (`analyse`); paired bootstrap of two candidate tables (`compare-tables`: EfficientNetV2-M, small-filament weighting, TTA x8; `docs/gate/`, `docs/gate3/`); label-free check of a filter on the test images (`test-shift`) |

@@ -203,6 +203,7 @@ NSO archive, taken on days at least two days away from every competition image
 ([`scripts/fetch_gong.py`](scripts/fetch_gong.py); images are fetched, not redistributed).
 [`docs/external_gong_manifest.csv`](docs/external_gong_manifest.csv) lists every image (URL, date, SHA-256 of the
 original and of the processed file); [`scripts/check_external.py`](scripts/check_external.py) re-checks the date
-gap against all train and test images and that the processing reproduces each file byte for byte.
+gap against all train and test images and, with `--originals`, downloads every original again and checks both
+recorded hashes: the archive file is unchanged and the processing reproduces the training input byte for byte.
 
 The code is released under the [MIT licence](LICENSE).

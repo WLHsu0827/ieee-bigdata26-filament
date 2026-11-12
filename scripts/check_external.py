@@ -2,16 +2,18 @@
 
 1. Date gap: every external image must be taken at least ``--min-gap-days`` days away from every
    competition image (train and test; dates from the ``YYYYMMDDhhmmss<site>h`` file names).
-2. Hashes (optional): SHA-256 of the original archive files (downloaded again from the manifest
-   URLs, ``--originals``) and of the processed files actually used (``--images`` folder, e.g. the
-   unzipped private dataset). With both, every original is re-processed exactly as in
-   ``fetch_gong.py`` and must reproduce the processed file byte for byte.
+2. Hashes (optional, ``--originals``): every original archive file is downloaded again from its manifest
+   URL and must match the SHA-256 recorded in the manifest, and re-processing it exactly as in
+   ``fetch_gong.py`` must reproduce the recorded SHA-256 of the processed file byte for byte. No copy of
+   the processed images is needed (about 1,200 downloads from the NSO archive).
 
-``--write`` stores the hashes in the manifest. Exit code 1 if any check fails.
+Recording the hashes: ``--images`` hashes a folder of processed files (as written by ``fetch_gong.py``);
+with ``--originals`` as well, every original must reproduce its processed file, and ``--write`` stores
+both hashes in the manifest. Exit code 1 if any check fails.
 
 Usage:
-    python scripts/check_external.py --manifest docs/external_gong_manifest.csv --data MAGFiLO_1.0_Kaggle_2026 \
-        [--images gong/images --originals --write]
+    python scripts/check_external.py --data MAGFiLO_1.0_Kaggle_2026 [--originals]
+    python scripts/check_external.py --data MAGFiLO_1.0_Kaggle_2026 --images gong/images --originals --write
 """
 from __future__ import annotations
 
@@ -82,17 +84,24 @@ def main() -> None:
             if args.originals:
                 raw = get(r["url"])
                 out["sha256_original"] = hashlib.sha256(raw).hexdigest()
+                out["sha256_reprocessed"] = hashlib.sha256(process(raw)).hexdigest()
             if args.images:
                 data = (args.images / f"{r['name']}.jpeg").read_bytes()
                 out["sha256_processed"] = hashlib.sha256(data).hexdigest()
                 if raw is not None:
-                    out["reproduced"] = hashlib.sha256(process(raw)).hexdigest() == out["sha256_processed"]
+                    out["reproduced"] = out["sha256_reprocessed"] == out["sha256_processed"]
             return out
 
         with ThreadPoolExecutor(args.workers) as ex:
             results = list(ex.map(work, rows))
+        if args.originals and not args.write:  # against the hashes recorded in the manifest
+            same_orig = sum(res["sha256_original"] == r.get("sha256_original") for r, res in zip(rows, results))
+            same_proc = sum(res["sha256_reprocessed"] == r.get("sha256_processed") for r, res in zip(rows, results))
+            print(f"originals as recorded in the manifest: {same_orig} / {len(rows)}; re-processing them reproduces "
+                  f"the recorded processed file: {same_proc} / {len(rows)}")
+            failed |= same_orig != len(rows) or same_proc != len(rows)
         for r, res in zip(rows, results):
-            r.update({k: v for k, v in res.items() if k != "reproduced"})
+            r.update({k: v for k, v in res.items() if k in ("sha256_original", "sha256_processed")})
         if args.images and args.originals:
             n_ok = sum(res["reproduced"] for res in results)
             print(f"re-processing the originals reproduces {n_ok} / {len(rows)} processed files byte for byte")

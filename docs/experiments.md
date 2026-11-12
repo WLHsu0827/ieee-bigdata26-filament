@@ -211,6 +211,16 @@ scored separately. LB = public leaderboard (~50 % of the test images).
   named 'filseg'`), fixed; `test_scripts_find_the_package_without_pythonpath` now loads every script this way
   (it fails on the unfixed file). pytest and ruff are not in `requirements.txt` (not needed to reproduce the
   predictions); the README gives their versions.
+* External-data hashes checkable without the processed images (11-12). `check_external.py --originals` used to
+  only record the hashes; the byte-exact processing could be confirmed only against a local copy of the
+  processed images (all 1,200 reproduced when the hashes were recorded, 11-08). It now compares every
+  re-downloaded original, and its re-processed version, with the two SHA-256 in the manifest; a mismatch of
+  either gives exit code 1 (test `test_check_external_verifies_the_recorded_hashes`). The images were fetched
+  and processed on a Windows machine (access to the archive from Kaggle stalled) with OpenCV 5.0.0, which bundles
+  libjpeg-turbo 3.1.2. Checked against the NSO archive on three images (first, middle and last manifest row),
+  with that OpenCV and with the pinned `opencv-python-headless==4.14.0.94` and `numpy==2.1.3` (also
+  libjpeg-turbo 3.1.2): originals unchanged and processing reproduced byte for byte; a manifest with one altered
+  hash of either kind fails. Not checked on Linux; the full check (about 1,200 downloads) was not repeated.
 * Public-split noise (11-08, `scripts/split_noise.py` on the K1 out-of-fold maps, Kaggle CPU kernel fil-noise;
   `docs/split_noise.json`): per-image PQ counts of the final configurations, pooled PQ over 4,000 random
   90-image subsets of the 707 images. A score on 90 images scatters around the score on all images with
