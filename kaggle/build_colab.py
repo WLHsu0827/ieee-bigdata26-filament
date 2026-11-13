@@ -168,6 +168,7 @@ print("all jobs finished:", codes)
 """
 
 def cell(kind: str, src: str) -> dict:
+    """One nbformat-4 cell of type ``kind`` ("markdown" or "code"); code cells start unexecuted."""
     c = {"cell_type": kind, "metadata": {}, "source": src.splitlines(keepends=True)}
     if kind == "code":
         c.update(execution_count=None, outputs=[])

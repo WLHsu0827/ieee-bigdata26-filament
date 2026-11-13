@@ -14,6 +14,7 @@ import sys
 
 
 def split(argv: list[str]) -> list[list[str]]:
+    """Split the arguments at ``++`` into command lines (empty ones dropped)."""
     cmds, cur = [], []
     for a in argv:
         if a == "++":

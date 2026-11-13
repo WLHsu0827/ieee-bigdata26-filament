@@ -127,6 +127,7 @@ def _job(args) -> list[dict]:
 
 
 def build(args) -> None:
+    """``build``: write the candidate table of all out-of-fold images (see the module docstring) as a pickle."""
     from analyze_oof import load_gt
     from cli_utils import expand
 
@@ -193,6 +194,8 @@ class Levels:
         self.i05 = self.levels.index(0.5)
 
     def counts(self, keep: np.ndarray, lev: np.ndarray, rows: np.ndarray, images: set) -> np.ndarray:
+        """Pooled [sum of matched IoU, TP, FP, FN] of the kept ``rows``, each candidate drawn at its level ``lev``
+        (candidates that vanish at that level are dropped); FN counts against the GT filaments of ``images``."""
         sel = rows & keep & (self.a[np.arange(len(lev)), lev] > 0)
         idx = np.flatnonzero(sel)
         tp = int(self.nm[idx, lev[idx]].sum())
@@ -200,6 +203,8 @@ class Levels:
                          sum(self.gt.get(i, 0) for i in images) - tp], float)
 
     def oracle(self, per_component: bool) -> float:
+        """In-sample bound: pooled PQ when candidates are kept by their true per-entry matched IoU, at outline
+        0.5 or (``per_component``) at each candidate's best level."""
         best = np.where(self.a > 0, self.y, -np.inf).argmax(1)  # levels where the candidate vanished are not options
         lev = best if per_component else np.full(len(self.y), self.i05)
         val = self.y[np.arange(len(lev)), lev]
@@ -264,6 +269,13 @@ def _decide(lv: Levels, pred: np.ndarray, rows: np.ndarray, margin: float, lam: 
 
 def nested(lv: Levels, feats: list[str], per_level: bool, r: float, inner_splits: int = 5,
            with_decisions: bool = False) -> dict:
+    """Nested CV of a learned filter on ``feats`` (with ``per_level`` also a per-candidate outline level).
+
+    Per outer fold: the per-entry matched IoU of the inner candidates is predicted out of fold (``inner_splits``
+    groups of images), the keep threshold (and level margin) that maximises PQ_r on these predictions is chosen,
+    and a regressor fitted on all inner candidates decides the outer ones. Returns the pooled nested PQ, the
+    objective PQ_r, TP / FP / FN and the per-fold choices (and, with ``with_decisions``, the decisions).
+    """
     from sklearn.model_selection import GroupKFold
 
     lams = np.linspace(0.05, 0.6, 56)
@@ -347,6 +359,7 @@ def nested_rule(lv: Levels, r: float) -> dict:
 
 
 def analyse(args) -> None:
+    """``analyse``: print the oracle bounds and the nested-CV PQ of each variant for each ``--r`` (``--out``: save)."""
     with open(args.table, "rb") as fh:
         data = pickle.load(fh)
     lv = Levels(data)

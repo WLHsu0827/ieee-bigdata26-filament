@@ -43,6 +43,7 @@ SIZE = 2048
 
 
 def competition_days(data_dir: Path) -> set[dt.date]:
+    """Dates of all competition images (train and test), from the ``YYYYMMDD`` start of their file names."""
     names = [p.stem for p in data_dir.rglob("*.jp*g")]
     return {dt.datetime.strptime(n[:8], "%Y%m%d").date() for n in names}
 
@@ -78,6 +79,7 @@ def mask_outside(img: np.ndarray) -> np.ndarray:
 
 
 def get(url: str, retries: int = 3) -> bytes:
+    """Body of an HTTP GET, trying up to ``retries`` times (waiting 2 s, 4 s, ... in between)."""
     for k in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA})
@@ -91,6 +93,9 @@ def get(url: str, retries: int = 3) -> bytes:
 
 
 def fetch_day(day: dt.date, ranges: dict, out_dir: Path, seed: int, tries: int = 3) -> dict | None:
+    """Try up to ``tries`` random hourly images of ``day`` from the GONG sites; save the first that is 2048 x 2048
+    and whose disk statistics lie in ``ranges`` (outside the inscribed circle set to 0) and return its manifest
+    row, or None."""
     rng = random.Random(f"{seed}-{day.isoformat()}")
     folder = f"{BASE}/{day:%Y%m}/{day:%Y%m%d}/"
     try:
@@ -118,6 +123,8 @@ def fetch_day(day: dt.date, ranges: dict, out_dir: Path, seed: int, tries: int =
 
 
 def reference_ranges(data_dir: Path, n: int, lo: float, hi: float, seed: int) -> dict:
+    """Accepted ranges of disk mean, standard deviation and sharpness: their ``lo``-th to ``hi``-th percentiles
+    over ``n`` random training images."""
     files = sorted((data_dir / "train").rglob("*.jp*g"))
     files = random.Random(seed).sample(files, min(n, len(files)))
     st = np.array([disk_stats(cv2.imread(str(f), cv2.IMREAD_GRAYSCALE)) for f in files])

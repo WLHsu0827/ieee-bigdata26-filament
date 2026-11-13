@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT))
 
 
 def block_network() -> None:
+    """Make every socket connection of this process raise, so nothing can be downloaded during the check."""
     def blocked(*args, **kwargs):
         raise RuntimeError("network access attempted")
 

@@ -42,6 +42,7 @@ def rule_decisions(lv: Levels, r: float) -> tuple[np.ndarray, np.ndarray, dict]:
 
 
 def pq(x: np.ndarray) -> float:
+    """PQ of pooled counts ``[sum of matched IoU, TP, FP, FN]``."""
     return float(x[0] / max(x[1] + 0.5 * x[2] + 0.5 * x[3], 1e-9))
 
 

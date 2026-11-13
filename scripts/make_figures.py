@@ -1,7 +1,11 @@
 """Figures for the notebook / report.
 
-Usage:
+Usage (without arguments: ``pipeline``; ``-h`` / ``--help`` prints this text):
     python scripts/make_figures.py pipeline            # docs/figures/pipeline.png
+    python scripts/make_figures.py evaluation <post.json> <gt_crops.pkl | none> <out.png> <val_probs.npz | glob> [...]
+    python scripts/make_figures.py evaluation-replot <arrays.npz> <evaluation.json> <out.png> [row|grid]
+    python scripts/make_figures.py overlays <val_probs.npz> <post.json> <data_dir> <image_id> [<image_id> ...]
+    python scripts/make_figures.py morphology <val_probs.npz[,more.npz]> <post.json> <data_dir> <image_id> [...]
 """
 from __future__ import annotations
 
@@ -353,7 +357,9 @@ def draw_evaluation(iou, dice, gdeg: dict, pdeg: dict, recall: list, tax: dict, 
 
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "pipeline"
-    if what == "pipeline":
+    if what in ("-h", "--help"):
+        print(__doc__)
+    elif what == "pipeline":
         print(pipeline_diagram())
     elif what == "overlays":  # overlays <val_probs.npz> <post.json> <data_dir> <image_id> [<image_id> ...]
         print(overlays(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), sys.argv[5:]))
@@ -382,3 +388,5 @@ if __name__ == "__main__":
     elif what == "evaluation":  # evaluation <post.json> <gt_crops.pkl | none> <out.png> <val_probs.npz | glob> [...]
         gt_arg = None if sys.argv[3].lower() == "none" else Path(sys.argv[3])
         print(evaluation(sys.argv[5:], Path(sys.argv[2]), gt_arg, Path(sys.argv[4])))
+    else:
+        sys.exit(f"unknown figure {what!r}\n{__doc__}")

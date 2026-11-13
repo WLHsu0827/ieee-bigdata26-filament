@@ -61,11 +61,14 @@ def per_image_counts(probs_files: list[Path], gt_cache: Path | None, data: str |
 
 
 def pooled_pq(a: np.ndarray) -> float:
+    """PQ pooled over images: the per-image rows ``[sum of matched IoU, TP, FP, FN]`` are summed first."""
     s = a.sum(0)
     return float(s[0] / max(s[1] + 0.5 * s[2] + 0.5 * s[3], 1e-9))
 
 
 def subset_stats(counts: dict, size: int, draws: int, seed: int = 0) -> dict:
+    """Pooled PQ of each configuration on all images, its spread over ``draws`` random subsets of ``size`` images
+    (sd, 5th / 95th percentile), and the paired differences between configurations on the same subsets."""
     rng = np.random.default_rng(seed)
     names = list(counts)
     images = sorted(set.intersection(*(set(counts[n]) for n in names)))

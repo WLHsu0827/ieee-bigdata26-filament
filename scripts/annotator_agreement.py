@@ -38,6 +38,7 @@ THRESHOLDS = (0.3, 0.45, 0.6, 0.9)
 
 
 def union(crops: list[Crop]) -> np.ndarray:
+    """Full-size boolean mask covered by ``crops`` (e.g. all filaments of one annotator)."""
     u = np.zeros((IMAGE_SIZE, IMAGE_SIZE), bool)
     for c in crops:
         h, w = c.mask.shape
@@ -46,6 +47,7 @@ def union(crops: list[Crop]) -> np.ndarray:
 
 
 def components(mask: np.ndarray) -> list[Crop]:
+    """Instance crops of a binary mask: 8-connected components, holes filled, no minimum area."""
     lab, _ = instances_from_prob(mask.astype(np.float32), PostConfig(threshold=0.5, min_area=0))
     return label_to_crops(lab)
 

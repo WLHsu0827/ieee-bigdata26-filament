@@ -46,6 +46,7 @@ def _init(run_dir: str, cfgs: dict) -> None:
 
 
 def average(maps: list[np.ndarray]) -> np.ndarray:
+    """Pixel-wise mean of uint8 probability maps, rounded back to uint8."""
     acc = np.zeros(maps[0].shape, np.float32)
     for m in maps:
         acc += m
@@ -88,6 +89,9 @@ def _pq(tp: float, fp: float, fn: float, s: float) -> float:
 
 
 def summarize(rows: list[dict], names: list[str]) -> dict:
+    """Pool the per-image records of each configuration: instances and area per image of the ten- and the
+    two-network averages, agreement of each fold's two-network selection with the ten-network one, and of
+    the two-network selections with each other (PQ-style scores)."""
     n_img = len(rows)
     summary = {"images": n_img}
     for name in names:

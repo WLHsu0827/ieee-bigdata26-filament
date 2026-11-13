@@ -23,6 +23,8 @@ SKIP_ARGS = {"data", "out", "predict_test", "post", "workers", "threads", "tune_
 
 
 def train_args(run: Path) -> dict:
+    """Training arguments of a run: ``args.json``, or for older runs the ``args=`` dict on the first line of
+    ``log.txt``."""
     if (run / "args.json").exists():
         return json.loads((run / "args.json").read_text())
     first = (run / "log.txt").read_text(encoding="utf-8").splitlines()[0]
@@ -32,6 +34,8 @@ def train_args(run: Path) -> dict:
 
 
 def command_line(args: dict) -> str:
+    """``filseg.train`` options that reproduce ``args`` (``True``: bare flag; ``None``, ``False`` and
+    ``SKIP_ARGS`` omitted)."""
     parts = []
     for k, v in args.items():
         if k in SKIP_ARGS or v is None or v is False:
@@ -42,6 +46,7 @@ def command_line(args: dict) -> str:
 
 
 def sha256(path: Path) -> str:
+    """SHA-256 hex digest of a file."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
