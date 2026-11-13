@@ -38,7 +38,10 @@ image, and writes `submission.csv` in the competition format.
 | 4. instance extraction | probability map | candidate components -> learned filter -> outlines at p > 0.5 | `filseg.postprocess.instances_from_prob` |
 | 5. encoding | instances | COCO RLE rows of `submission.csv` | `filseg.submission` |
 """),
-    ("markdown", "## 1. Setup\n\nSet `DATA_DIR` to the unzipped competition data (`MAGFiLO_1.0_Kaggle_2026`; found "
+    ("markdown", "## 1. Setup\n\nRun this notebook in a clone of the repository (steps in its README). It uses the "
+                 "repository root (the parent of the working directory if that is `notebooks/`, otherwise the working "
+                 "directory itself) to import `filseg`, load `weights/` and write the submissions. "
+                 "Set `DATA_DIR` to the unzipped competition data (`MAGFiLO_1.0_Kaggle_2026`; found "
                  "automatically inside or next to the repository, at `$FILSEG_DATA` or under `/kaggle/input`). "
                  "Install the pinned packages with `pip install -r requirements.txt` if needed.\n\n"
                  "`PROFILE = \"full\"` reproduces the submission with all ten networks; `\"fast\"` uses the five "
