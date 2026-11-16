@@ -222,7 +222,10 @@ The code is released under the [MIT licence](LICENSE).
 
 The competition's open-access policy asks for the repository to be public from the close of the competition
 until the winners are announced. We first made it public on 2026-11-15 at 06:06 UTC, just after the original
-Kaggle deadline (2026-11-15 06:00 UTC). Before that, the organisers had moved the Kaggle deadline to
-2026-11-16 11:59:59 UTC (stated in a reply in the competition's discussion forum), which we noticed only at about
-12:00 UTC. Because the competition was still running, we made the repository private again at 14:13 UTC the same
-day and public again after the new deadline.
+Kaggle deadline (2026-11-15 06:00 UTC). Before that, the organisers had moved the Kaggle deadline, stating in a
+reply in the competition's discussion forum that it now matched the deadline for reports and solutions (11:59 pm
+CDT on 15 November); the Kaggle page counted down to 2026-11-16 11:59:59 UTC. We noticed the change only at about
+12:00 UTC and, because the competition was still running, made the repository private again at 14:13 UTC the
+same day. It has been public again since 2026-11-16 at 05:17 UTC, after the deadline for reports and solutions as
+the organisers wrote it (11:59 pm CDT on 15 November, i.e. 04:59 UTC) and before the end of the Kaggle countdown;
+the organisers stated in the forum that contestants may share their code at any time.
