@@ -73,10 +73,12 @@ folder named by `$FILSEG_DATA`, then under `/kaggle/input` (competition data att
 download needed there). It writes `submission.csv` and `submission_rule.csv` to the repository root.
 
 [`submissions/`](submissions) holds the two files submitted to Kaggle, byte for byte (downloaded back from Kaggle):
-`submission.csv` (final submission B, Kaggle ref 58107878, public score 0.38; SHA-256
+`submission.csv` (final submission B, Kaggle ref 58107878, public score 0.38, private 0.37; SHA-256
 `18d75e35cb3d42df61b863a5636c3c54b099effa25ad7e7748940fee186f455c`) and `submission_rule.csv` (final submission A,
-ref 58109804, public score 0.39; `a6e10ecfe416aec6c76fe8a58f1b59a71b56b6117780d4ffc3bda654461f36bf`). The committed
-notebook run wrote exactly these files, and two runs of the committed notebook on Kaggle T4 GPUs gave a
+ref 58109804, public score 0.39, private 0.36; `a6e10ecfe416aec6c76fe8a58f1b59a71b56b6117780d4ffc3bda654461f36bf`).
+Both files were also sent with the final-submission form, but on Kaggle only A ended up selected for final scoring,
+so the Kaggle leaderboard ranks this entry by A (private scores as shown after the close on 2026-11-16). The
+committed notebook run wrote exactly these files, and two runs of the committed notebook on Kaggle T4 GPUs gave a
 byte-identical `submission.csv`. To check a run against them:
 
 ```bash
